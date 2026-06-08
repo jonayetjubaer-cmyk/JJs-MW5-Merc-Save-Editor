@@ -57,13 +57,22 @@ This tool edits your save files directly. **Always keep a backup** before editin
 
 ---
 
-## 🛡️ "Windows protected your PC" / antivirus warning
+## 🛡️ "Windows protected your PC" / antivirus / "malware" flag
 
 Because this is a small indie tool that isn't code-signed (signing costs money),
 Windows SmartScreen or your antivirus may warn you the first time you run it.
 This is normal for tools like this — it does **not** mean there's anything wrong.
-
 To run it: click **More info → Run anyway**.
+
+**About "malware" detections (e.g. `W32.Malware.*`) — this is a false positive.**
+The app is built with [PyInstaller](https://pyinstaller.org/), which wraps Python
+apps in a small self-extracting launcher. That launcher's behaviour trips some
+antivirus engines' *heuristics*, so they flag the **launcher**, not this code —
+a well-documented PyInstaller issue affecting many legitimate tools. Windows
+Defender reports it clean, and the full source is right here in this repo so you
+can verify exactly what it does. If your scanner is strict, use the
+**`-folder` (one-folder) download**, which doesn't self-extract and generally
+isn't flagged.
 
 ---
 
