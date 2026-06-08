@@ -95,9 +95,53 @@ CHASSIS = {
 
 ALL_VARIANTS = sorted(v for vs in CHASSIS.values() for v in vs)
 
+# variant code -> chassis display name (e.g. "AS7-D" -> "Atlas")
+VARIANT_TO_CHASSIS = {v: name for name, vs in CHASSIS.items() for v in vs}
+
+# Well-known hero / named variants (high-confidence MW5 names only).
+HERO_NAMES = {
+    "AS7-BH": "Boar's Head", "AS7-D-H": "Hero", "CN9-YLW": "Yen-Lo-Wang",
+    "CN9-YLW2": "Yen-Lo-Wang", "HBK-GI": "Grid Iron", "LCT-PB": "Pirate's Bane",
+    "COM-TDK": "The Death's Knell", "PNT-KK": "Katana Kat", "AWS-PB": "Pretty Baby",
+    "MAD-BH": "Bounty Hunter", "MAD-BH2": "Bounty Hunter", "WHM-BW": "Black Widow",
+    "RFL-DNA": "Diana", "CPLT-J": "Jester", "HGN-HM": "Heavy Metal", "STK-M": "Misery",
+    "VTR-DS": "Dragon Slayer", "CP-S": "Sleipnir", "KGC-KJ": "Kaiju", "JR7-O": "Oxide",
+    "CDA-X5": "X-5", "ON1-YAJ": "Yajima", "DRG-FANG": "Fang", "DRG-FLAME": "Flame",
+    "DRG-SDW": "Shadow", "LGB-HS": "Hailstorm", "LDK-IDM": "Indomitable",
+    "MAL-MX90": "MX90", "BLR-1GHE": "Hellslinger", "VL-BL": "Bloodlust",
+    "GHR-MJ": "Mjolnir", "CGR-N7": "N7",
+}
+
+
 def asset_name(variant: str) -> str:
     """Variant code -> MechDataAsset PrimaryAssetName."""
     return variant if variant.endswith("_MDA") else variant + "_MDA"
 
-# (label, variant) pairs like ("Atlas  AS7-D", "AS7-D") for dropdowns.
-LABELED = [(f"{n}  {v}", v) for n in sorted(CHASSIS) for v in sorted(CHASSIS[n])]
+
+def variant_code(name: str) -> str:
+    """Strip a trailing _MDA (and accept either form)."""
+    return name[:-4] if name.endswith("_MDA") else name
+
+
+def display(name: str) -> str:
+    """Friendly label for a variant code or asset name, e.g.:
+        'AS7-BH_MDA' -> 'Atlas “Boar's Head” (AS7-BH)'
+        'JVN-10F'    -> 'Javelin (JVN-10F)'
+        unknown code -> the code itself (so nothing ever breaks)."""
+    code = variant_code(name)
+    chassis = VARIANT_TO_CHASSIS.get(code)
+    if not chassis:
+        return code
+    hero = HERO_NAMES.get(code)
+    if hero:
+        return f'{chassis} "{hero}" ({code})'
+    return f"{chassis} ({code})"
+
+
+# (label, variant) pairs for dropdowns. Heroes get their nickname inline so they
+# are searchable by name too, e.g. ("Atlas  AS7-BH  “Boar's Head”", "AS7-BH").
+def _label(name, code):
+    hero = HERO_NAMES.get(code)
+    return f"{name}  {code}" + (f'  "{hero}"' if hero else "")
+
+LABELED = [(_label(n, v), v) for n in sorted(CHASSIS) for v in sorted(CHASSIS[n])]

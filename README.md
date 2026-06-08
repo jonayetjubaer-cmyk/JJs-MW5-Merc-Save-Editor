@@ -129,6 +129,17 @@ The golden rule of this codebase: **a no-op save must stay byte-for-byte
 identical to the original.** `editor/test_roundtrip.py` and the model sweep in
 `notes/format_notes.md` are how that's validated — please keep it lossless.
 
+## 📝 Changelog
+
+**v1.0.1**
+- Mech list and the Add-Mech picker now show **friendly names** (e.g. *Javelin
+  (JVN-10F)*) and **hero nicknames** (*Atlas "Boar's Head"*, *Centurion
+  "Yen-Lo-Wang"*, …) instead of raw asset codes.
+- Version now shown in the window title.
+
+**v1.0.0**
+- Initial release: Mechs, Pilots, Inventory, C-Bills, and Faction Standings.
+
 ## 📄 License
 
 [MIT](LICENSE) — do whatever you like, just keep the copyright notice.
