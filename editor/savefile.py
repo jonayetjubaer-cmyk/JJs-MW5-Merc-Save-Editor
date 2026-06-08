@@ -226,6 +226,32 @@ class Mech:
         if ld.get("InstalledStructure") is not None:
             copy_struct("InstalledStructure", "CurrentStructure", ARMOR_PARTS)
 
+    def installed_weapon_count(self) -> int:
+        iw = _path(self.market_item.decoded, "Item", "ItemData", "InstalledWeapons")
+        if iw is None or iw.decoded is None or not hasattr(iw.decoded, "count"):
+            return 0
+        return iw.decoded.count
+
+    def clear_loadout(self):
+        """Empty the hardpoint-keyed loadout arrays (installed weapons + weapon
+        groups + chain-fire groups). Used when adding an *approximate* mech of a
+        chassis we have no exact template for: stripping these avoids carrying
+        the donor's stale, wrong-chassis weapon-group entries (which is what made
+        added mechs' groups reset to 1). The mech keeps its core equipment/engine
+        and armor, so it loads as a weaponless chassis the player refits in the
+        Mech Lab -- where fresh, correct weapon groups can be set."""
+        item_data = _path(self.market_item.decoded, "Item", "ItemData")
+        if item_data is None or item_data.decoded is None:
+            return
+        ld = item_data.decoded
+        for path in (("InstalledWeapons",),
+                     ("WeaponGroupInfo", "WeaponGroups"),
+                     ("WeaponGroupInfo", "ChainFireGroups")):
+            prop = _path(ld, *path)
+            if prop is not None and prop.decoded is not None and hasattr(prop.decoded, "elements"):
+                prop.decoded.elements = []
+                prop.decoded.count = 0
+
     def flush(self):
         """Re-serialize the nested archive back into the ByteData payload."""
         w = Writer()
@@ -497,32 +523,71 @@ class SaveFile:
                 out.append(Mech(el, bd, nested, footer))
         return out
 
-    def add_mech(self, chassis: str | None = None, *, donor_index: int = 0,
-                 repair: bool = True) -> bytes:
-        """Clone an existing owned mech, give it a fresh GUID, optionally swap
-        chassis + repair, append to MechLoadoutWrappers and claim a storage
-        slot. Returns the new GUID."""
-        wrappers = self._wrappers_array()
-        storage = self._storage_array()
-        new_guid = uuid.uuid4().bytes
+    def _wrapper_chassis(self, el: PropertyList) -> str | None:
+        """Read a MechLoadoutWrapper element's chassis asset name (PrimaryAssetName)."""
+        bd = el.get("ByteData")
+        if bd is None:
+            return None
+        br = Reader(bd.raw_payload)
+        length = br.i32()
+        nested = read_property_list(Reader(br.read(length)))
+        mi = nested.get("MarketItemMech")
+        if mi is None or mi.decoded is None:
+            return None
+        nm = _path(mi.decoded, "Item", "ItemData", "MechDataAssetId", "ID", "PrimaryAssetName")
+        return read_fstring_payload(nm.raw_payload) if nm else None
 
-        donor_el = wrappers.elements[donor_index]
-        clone_el = copy.deepcopy(donor_el)
-
-        bd = clone_el.get("ByteData")
+    def _mech_from_element(self, el: PropertyList) -> Mech:
+        bd = el.get("ByteData")
         br = Reader(bd.raw_payload)
         length = br.i32()
         arc = br.read(length)
         ar = Reader(arc)
         nested = read_property_list(ar)
         footer = arc[ar.pos:]
-        mech = Mech(clone_el, bd, nested, footer)
+        return Mech(el, bd, nested, footer)
 
-        mech.guid = new_guid
+    def add_mech(self, chassis: str | None = None, *, donor_index: int = 0,
+                 repair: bool = True) -> tuple[bytes, str]:
+        """Add a mech, returning (new_guid, status).
+
+        Hybrid strategy:
+        - If you already OWN a mech of `chassis` that has a real loadout, clone
+          THAT (an exact, fully-working duplicate)             -> status "exact".
+        - Otherwise clone a donor mech, rename it to `chassis`, repair it, and
+          STRIP its loadout (clear_loadout) so it doesn't carry the donor's
+          stale weapon groups; the player refits it in the Mech Lab
+                                                                -> status "approx".
+        `chassis` is the MechDataAsset PrimaryAssetName, e.g. "AS7-D_MDA"."""
+        wrappers = self._wrappers_array()
+        storage = self._storage_array()
+        new_guid = uuid.uuid4().bytes
+        status = "approx"
+        src_index = donor_index
+
+        # Tier 1: an owned mech of the exact chassis, with a non-empty loadout,
+        # is a perfect template -- duplicate it verbatim.
         if chassis:
-            mech.chassis = chassis
-        if repair:
-            mech.repair()
+            want = chassis if chassis.endswith("_MDA") else chassis + "_MDA"
+            for i, el in enumerate(wrappers.elements):
+                if self._wrapper_chassis(el) == want and \
+                        self._mech_from_element(el).installed_weapon_count() > 0:
+                    src_index = i
+                    status = "exact"
+                    break
+
+        clone_el = copy.deepcopy(wrappers.elements[src_index])
+        mech = self._mech_from_element(clone_el)
+        mech.guid = new_guid
+        if status == "exact":
+            if repair:
+                mech.repair()
+        else:
+            if chassis:
+                mech.chassis = chassis
+            if repair:
+                mech.repair()
+            mech.clear_loadout()   # avoid stale weapon groups on a foreign chassis
         mech.flush()
 
         wrappers.elements.append(clone_el)
@@ -532,7 +597,7 @@ class SaveFile:
         slot.get("Value").raw_payload = new_guid
         storage.elements.append(slot)
         storage.count += 1
-        return new_guid
+        return new_guid, status
 
     def remove_mech(self, guid: bytes):
         wrappers = self._wrappers_array()

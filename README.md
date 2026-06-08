@@ -73,9 +73,18 @@ To run it: click **More info → Run anyway**.
 Yes — the mech and item lists include vanilla + DLC content. The game safely
 ignores anything from a DLC you don't own.
 
-**I added a heavier mech (e.g. an Atlas) and it shows "needs repair" — why?**
-A swapped chassis keeps the armor amount of the mech it was based on. Just refit
-it in the in-game Mech Lab to load its proper armor.
+**What's the difference between an "exact" and "approximate" added mech?**
+If you already own a mech of that chassis, Add Mech makes a perfect duplicate.
+If you don't, a mech's true layout (engine, hardpoints, max armor) lives in the
+*game's* files, not the save — so it can't be built perfectly. In that case you
+get an **approximate** clone with its weapons stripped: open it in the Mech Lab
+and refit it, and everything (including weapon groups) works correctly.
+
+**My added mech's weapon groups won't stick / weapons won't fire.**
+Two things: (1) In the Mech Lab's **Weapon Groups** tab, make sure each weapon is
+assigned to a group (1–6) — unassigned weapons don't fire. (2) For an
+*approximate* added mech, **strip and refit it** first; it ships with no weapons
+so you start from a clean, correct loadout.
 
 **Will this corrupt my save?**
 It's built around a lossless save format — saving without making changes produces
@@ -130,6 +139,13 @@ identical to the original.** `editor/test_roundtrip.py` and the model sweep in
 `notes/format_notes.md` are how that's validated — please keep it lossless.
 
 ## 📝 Changelog
+
+**v1.0.2**
+- **Smarter Add Mech.** If you already own a mech of the chosen chassis, it now
+  adds an **exact, fully-working duplicate** (weapons + weapon groups intact).
+  For a chassis you don't own, it adds an **approximate** clone with its weapons
+  stripped — so it no longer carries stale weapon groups (which caused added
+  mechs' fire groups to reset to 1). Refit it in the Mech Lab and groups stick.
 
 **v1.0.1**
 - Mech list and the Add-Mech picker now show **friendly names** (e.g. *Javelin

@@ -27,7 +27,7 @@ from mech_catalog import LABELED, asset_name, display as mech_display, variant_c
 from item_catalog import CATALOG, CATEGORY_INVENTORY
 
 
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.0.2"
 
 DEFAULT_SAVE_DIR = os.path.expandvars(
     r"%LOCALAPPDATA%\MW5Mercs\Saved\SaveGames"
@@ -363,9 +363,21 @@ class EditorApp(tk.Tk):
         if chassis is None:
             return
         try:
-            self.save.add_mech(chassis)
+            _guid, status = self.save.add_mech(chassis)
             self._refresh_mechs()
-            self.status.set(f"Added {chassis} (repaired). Remember to Save.")
+            label = mech_display(chassis)
+            if status == "exact":
+                self.status.set(f"Added {label} — exact copy of one you own. Remember to Save.")
+            else:
+                self.status.set(f"Added {label} (approximate — strip & refit it in the Mech Lab). Remember to Save.")
+                messagebox.showinfo(
+                    "Approximate mech added",
+                    f"You don't own a {label} to copy, so it was added as an "
+                    "approximate clone with its weapons stripped.\n\n"
+                    "Open it in the Mech Lab and refit it — its weapons and weapon "
+                    "groups will then work correctly. (Its engine/internals match the "
+                    "donor mech; a different-chassis mech can't be built perfectly "
+                    "from save data alone.)")
         except Exception as e:
             self._error("Failed to add mech", e)
 
