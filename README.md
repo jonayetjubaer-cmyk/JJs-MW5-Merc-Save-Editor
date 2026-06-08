@@ -140,6 +140,14 @@ identical to the original.** `editor/test_roundtrip.py` and the model sweep in
 
 ## 📝 Changelog
 
+**v1.1.0**
+- **Mech loadout editor!** Select a mech → **Edit Loadout…** to:
+  - Swap, remove, or fill weapons per hardpoint (the list is filtered to each
+    slot's class — energy/ballistic/missile/melee — so you can't put an
+    autocannon in a laser slot).
+  - Set each weapon's **fire group** (1–6) directly — no Mech Lab needed.
+  - Edit **armor** per location, with a one-click "Max armor" button.
+
 **v1.0.2**
 - **Smarter Add Mech.** If you already own a mech of the chosen chassis, it now
   adds an **exact, fully-working duplicate** (weapons + weapon groups intact).

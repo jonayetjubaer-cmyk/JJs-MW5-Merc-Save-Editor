@@ -24,10 +24,13 @@ def _resource_path(name: str) -> str:
     base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
     return os.path.join(base, name)
 from mech_catalog import LABELED, asset_name, display as mech_display, variant_code
-from item_catalog import CATALOG, CATEGORY_INVENTORY
+from item_catalog import CATALOG, CATEGORY_INVENTORY, WEAPONS
+from savefile import weapon_class, ARMOR_PARTS, REAR_PARTS
+
+HARDPOINT_LABEL = {"EH": "Energy", "BH": "Ballistic", "MH": "Missile", "Melee": "Melee"}
 
 
-APP_VERSION = "1.0.2"
+APP_VERSION = "1.1.0"
 
 DEFAULT_SAVE_DIR = os.path.expandvars(
     r"%LOCALAPPDATA%\MW5Mercs\Saved\SaveGames"
@@ -111,6 +114,7 @@ class EditorApp(tk.Tk):
         side = ttk.Frame(self.mech_tab)
         side.pack(side="left", fill="y", pady=4)
         ttk.Button(side, text="Add Mech…", command=self.on_add_mech).pack(fill="x", pady=2)
+        ttk.Button(side, text="Edit Loadout…", command=self.on_edit_loadout).pack(fill="x", pady=2)
         ttk.Button(side, text="Change Chassis…", command=self.on_change_chassis).pack(fill="x", pady=2)
         ttk.Button(side, text="Repair (full armor)", command=self.on_repair).pack(fill="x", pady=2)
         ttk.Button(side, text="Repair ALL Mechs", command=self.on_repair_all).pack(fill="x", pady=2)
@@ -381,6 +385,22 @@ class EditorApp(tk.Tk):
         except Exception as e:
             self._error("Failed to add mech", e)
 
+    def on_edit_loadout(self):
+        if not self._guard():
+            return
+        idx = self._selected_mech_index()
+        if idx is None:
+            return self._need_selection()
+        mech = self.save.mechs()[idx]
+        if not mech.weapon_slots():
+            return messagebox.showinfo(
+                "No loadout",
+                "This mech has no hardpoints to edit (it's an approximate added "
+                "mech with a stripped loadout). Refit it in the in-game Mech Lab "
+                "first, save, then reload here.")
+        LoadoutDialog(self, mech, on_apply=lambda: (self._refresh_mechs(),
+                      self.status.set(f"Loadout updated for mech #{idx}. Remember to Save.")))
+
     def on_change_chassis(self):
         idx = self._selected_mech_index()
         if idx is None:
@@ -617,6 +637,131 @@ class EditorApp(tk.Tk):
         traceback.print_exc()
         messagebox.showerror(title, f"{type(exc).__name__}: {exc}")
         self.status.set(f"{title}: {exc}")
+
+
+class LoadoutDialog(tk.Toplevel):
+    """Full per-mech loadout editor: weapons (per hardpoint, class-filtered),
+    fire groups, and armor."""
+
+    def __init__(self, parent, mech, on_apply=None):
+        super().__init__(parent)
+        self.mech = mech
+        self.on_apply = on_apply
+        self.title(f"Edit Loadout — {mech_display(mech.chassis)}")
+        self.geometry("760x620")
+        self.transient(parent)
+
+        # weapon options per hardpoint class (name list), from the catalog
+        self._by_class = {"EH": [], "BH": [], "MH": [], "Melee": []}
+        for name, atype in WEAPONS:
+            cls = weapon_class(name, atype)
+            if cls in self._by_class:
+                self._by_class[cls].append((name, atype))
+        for cls in self._by_class:
+            self._by_class[cls].sort()
+
+        self.slots = mech.weapon_slots()
+        self.slot_widgets = []   # (slot, weapon_var, [group_vars])
+        self.armor_vars = {}     # location -> StringVar
+
+        self._build()
+
+    # -- UI ---------------------------------------------------------------
+    def _build(self):
+        ttk.Label(self, text="Weapons  (pick a weapon per hardpoint; ✓ the fire groups)",
+                  font=("", 10, "bold")).pack(anchor="w", padx=10, pady=(10, 2))
+
+        # scrollable weapon area
+        outer = ttk.Frame(self)
+        outer.pack(fill="both", expand=True, padx=10)
+        canvas = tk.Canvas(outer, highlightthickness=0, height=300)
+        sb = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
+        frame = ttk.Frame(canvas)
+        frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=frame, anchor="nw")
+        canvas.configure(yscrollcommand=sb.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        sb.pack(side="right", fill="y")
+
+        # header row
+        ttk.Label(frame, text="Hardpoint", width=30).grid(row=0, column=0, sticky="w")
+        ttk.Label(frame, text="Weapon", width=26).grid(row=0, column=1, sticky="w")
+        for g in range(1, 7):
+            ttk.Label(frame, text=str(g), width=3).grid(row=0, column=1 + g)
+
+        for r, slot in enumerate(self.slots, start=1):
+            cls = slot.hardpoint_class or "?"
+            loc = slot.slot_id.rsplit("_", 1)[0] if "_" in slot.slot_id else slot.slot_id
+            ttk.Label(frame, text=f"{HARDPOINT_LABEL.get(cls, cls)}: {loc}",
+                      width=30).grid(row=r, column=0, sticky="w", pady=1)
+
+            options = ["(empty)"] + [n for n, _t in self._by_class.get(cls, [])]
+            cur = slot.weapon_name
+            if cur not in ("None", "") and cur not in options:
+                options.insert(1, cur)   # keep an unrecognized current weapon
+            var = tk.StringVar(value="(empty)" if slot.is_empty else cur)
+            cb = ttk.Combobox(frame, textvariable=var, values=options, width=24, state="readonly")
+            cb.grid(row=r, column=1, sticky="w", padx=2)
+
+            gvars = []
+            for g in range(1, 7):
+                gv = tk.BooleanVar(value=(g in slot.groups()))
+                ttk.Checkbutton(frame, variable=gv).grid(row=r, column=1 + g)
+                gvars.append(gv)
+            self.slot_widgets.append((slot, var, gvars))
+
+        # armor
+        ttk.Separator(self, orient="horizontal").pack(fill="x", padx=10, pady=8)
+        ttk.Label(self, text="Armor (current)", font=("", 10, "bold")).pack(anchor="w", padx=10)
+        af = ttk.Frame(self)
+        af.pack(fill="x", padx=10, pady=4)
+        locs = ARMOR_PARTS + REAR_PARTS
+        for i, loc in enumerate(locs):
+            row, col = divmod(i, 4)
+            cell = ttk.Frame(af)
+            cell.grid(row=row, column=col, sticky="w", padx=4, pady=2)
+            ttk.Label(cell, text=loc, width=15).pack(side="left")
+            v = tk.StringVar(value=str(int(self.mech.armor_value(loc))))
+            ttk.Entry(cell, textvariable=v, width=6).pack(side="left")
+            self.armor_vars[loc] = v
+        ttk.Button(self, text="Max armor (= installed)", command=self._max_armor).pack(anchor="w", padx=10, pady=2)
+
+        # buttons
+        btns = ttk.Frame(self)
+        btns.pack(fill="x", padx=10, pady=10)
+        ttk.Button(btns, text="Apply", command=self._apply).pack(side="right")
+        ttk.Button(btns, text="Cancel", command=self.destroy).pack(side="right", padx=6)
+
+    def _max_armor(self):
+        for loc in ARMOR_PARTS + REAR_PARTS:
+            self.armor_vars[loc].set(str(int(self.mech.armor_value(loc, installed=True))))
+
+    def _apply(self):
+        # weapons + groups
+        wname_to_type = {n: t for vlist in self._by_class.values() for n, t in vlist}
+        for slot, var, gvars in self.slot_widgets:
+            choice = var.get()
+            if choice == "(empty)":
+                slot.clear()
+            elif not slot.is_empty or choice != slot.weapon_name:
+                atype = wname_to_type.get(choice)
+                if atype is None:
+                    atype = slot.weapon_type  # unrecognized current weapon kept as-is
+                if atype and atype != "None":
+                    slot.set_weapon(atype, choice)
+            for g in range(1, 7):
+                slot.set_group(g, gvars[g - 1].get())
+        # armor
+        try:
+            for loc, v in self.armor_vars.items():
+                self.mech.set_armor(loc, float(int(v.get())))
+        except ValueError:
+            messagebox.showerror("Invalid", "Armor values must be whole numbers.")
+            return
+        self.mech.flush()
+        if self.on_apply:
+            self.on_apply()
+        self.destroy()
 
 
 class ChassisDialog(simpledialog.Dialog):

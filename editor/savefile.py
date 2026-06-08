@@ -162,6 +162,110 @@ ARMOR_PARTS = ["Head", "CenterTorso", "LeftTorso", "RightTorso",
                "LeftArm", "RightArm", "LeftLeg", "RightLeg"]
 REAR_PARTS = ["CenterTorsoRear", "LeftTorsoRear", "RightTorsoRear"]
 
+NONE_ASSET = "None"
+import re as _re
+
+
+def hardpoint_class(slot_id: str) -> str | None:
+    """Hardpoint class from a weapon slot id, e.g.
+    'Torso_Left_EH1_mediumlaser' -> 'EH' (energy), 'BH' (ballistic),
+    'MH' (missile), or 'Melee'. The slot id is a FIXED hardpoint identity --
+    any weapon of the matching class can go in it (the trailing weapon name is
+    just the hardpoint's default and does NOT need to match what's installed)."""
+    if "Melee" in slot_id:
+        return "Melee"
+    for tok in slot_id.split("_"):
+        m = _re.match(r"^([EBM])H\d+$", tok)
+        if m:
+            return m.group(1) + "H"
+    return None
+
+
+def weapon_class(asset_name: str, asset_type: str) -> str | None:
+    """Which hardpoint class a weapon fits into. Note asset TYPE (Trace/
+    Projectile/Missile/Melee) doesn't map 1:1 to hardpoint class: PPC is a
+    Projectile but goes in an Energy hardpoint; the MachineGun is a Trace but
+    goes in a Ballistic hardpoint."""
+    if asset_type == "MWMissileWeaponDataAsset":
+        return "MH"
+    if asset_type == "MWMeleeWeaponDataAsset":
+        return "Melee"
+    if asset_type == "MWTraceWeaponDataAsset":
+        return "BH" if "MachineGun" in asset_name else "EH"
+    if asset_type == "MWProjectileWeaponDataAsset":
+        return "EH" if "PPC" in asset_name else "BH"
+    return None
+
+
+def _bool_value(prop: Property) -> bool:
+    # BoolProperty stores its value inline at raw_header[8] (after int64 size=0).
+    return bool(prop.raw_header[8]) if prop and len(prop.raw_header) > 8 else False
+
+
+def _set_bool(prop: Property, value: bool):
+    if prop is None or len(prop.raw_header) <= 8:
+        return
+    hdr = bytearray(prop.raw_header)
+    hdr[8] = 1 if value else 0
+    prop.raw_header = bytes(hdr)
+
+
+class WeaponSlot:
+    """One entry of a mech's InstalledWeapons, linked to its WeaponGroups entry."""
+
+    def __init__(self, element: PropertyList, group_element: PropertyList | None):
+        self.element = element
+        self.group_element = group_element  # matching WeaponGroups[] entry (by slot id)
+
+    @property
+    def slot_id(self) -> str:
+        p = self.element.get("HardpointSlotID")
+        return read_fstring_payload(p.raw_payload) if p else ""
+
+    @property
+    def hardpoint_class(self) -> str | None:
+        return hardpoint_class(self.slot_id)
+
+    def _type_prop(self):
+        return _path(self.element, "WeaponData", "WeaponId", "ID",
+                     "PrimaryAssetType", "Name")
+
+    def _name_prop(self):
+        return _path(self.element, "WeaponData", "WeaponId", "ID", "PrimaryAssetName")
+
+    @property
+    def weapon_type(self) -> str:
+        p = self._type_prop()
+        return read_fstring_payload(p.raw_payload) if p else NONE_ASSET
+
+    @property
+    def weapon_name(self) -> str:
+        p = self._name_prop()
+        return read_fstring_payload(p.raw_payload) if p else NONE_ASSET
+
+    @property
+    def is_empty(self) -> bool:
+        return self.weapon_name in ("", NONE_ASSET)
+
+    def set_weapon(self, asset_type: str, asset_name: str):
+        _set_leaf(self._type_prop(), write_fstring_payload(asset_type))
+        _set_leaf(self._name_prop(), write_fstring_payload(asset_name))
+
+    def clear(self):
+        self.set_weapon(NONE_ASSET, NONE_ASSET)
+
+    def groups(self) -> set[int]:
+        out = set()
+        if self.group_element is not None:
+            for n in range(1, 7):
+                if _bool_value(self.group_element.get(f"bWeaponGroup{n}")):
+                    out.add(n)
+        return out
+
+    def set_group(self, n: int, on: bool):
+        if self.group_element is not None:
+            _set_bool(self.group_element.get(f"bWeaponGroup{n}"), on)
+
 
 class Mech:
     """A MechLoadoutWrapper element. Its real data lives in a nested archive
@@ -231,6 +335,68 @@ class Mech:
         if iw is None or iw.decoded is None or not hasattr(iw.decoded, "count"):
             return 0
         return iw.decoded.count
+
+    # -- loadout editing ---------------------------------------------------
+    def _loadout(self):
+        return _path(self.market_item.decoded, "Item", "ItemData")
+
+    def weapon_slots(self) -> list[WeaponSlot]:
+        ld = self._loadout()
+        if ld is None or ld.decoded is None:
+            return []
+        iw = ld.decoded.get("InstalledWeapons")
+        if iw is None or iw.decoded is None:
+            return []
+        # index WeaponGroups by slot id
+        groups_by_id = {}
+        wgi = ld.decoded.get("WeaponGroupInfo")
+        if wgi is not None and wgi.decoded is not None:
+            wg = wgi.decoded.get("WeaponGroups")
+            if wg is not None and wg.decoded is not None:
+                for gel in wg.decoded.elements:
+                    sid_p = gel.get("HardpointSlotID")
+                    if sid_p is not None:
+                        groups_by_id[read_fstring_payload(sid_p.raw_payload)] = gel
+        out = []
+        for el in iw.decoded.elements:
+            sid_p = el.get("HardpointSlotID")
+            sid = read_fstring_payload(sid_p.raw_payload) if sid_p else ""
+            out.append(WeaponSlot(el, groups_by_id.get(sid)))
+        return out
+
+    def armor_value(self, location: str, installed: bool = False) -> float:
+        ld = self._loadout()
+        if ld is None or ld.decoded is None:
+            return 0.0
+        rear = location in REAR_PARTS
+        struct_name = ("InstalledRearArmor" if rear else "InstalledArmor") if installed \
+            else ("CurrentRearArmor" if rear else "CurrentArmor")
+        s = ld.decoded.get(struct_name)
+        if s is None or s.decoded is None:
+            return 0.0
+        p = s.decoded.get(location)
+        return read_float(p.raw_payload) if p else 0.0
+
+    def set_armor(self, location: str, value: float, installed: bool = False):
+        ld = self._loadout()
+        if ld is None or ld.decoded is None:
+            return
+        rear = location in REAR_PARTS
+        struct_name = ("InstalledRearArmor" if rear else "InstalledArmor") if installed \
+            else ("CurrentRearArmor" if rear else "CurrentArmor")
+        s = ld.decoded.get(struct_name)
+        if s is None or s.decoded is None:
+            return
+        p = s.decoded.get(location)
+        if p is not None:
+            p.raw_payload = write_float(value)  # FloatProperty payload is fixed 4 bytes
+
+    def max_armor(self):
+        """Set CurrentArmor = InstalledArmor for every location (front + rear)."""
+        for loc in ARMOR_PARTS:
+            self.set_armor(loc, self.armor_value(loc, installed=True))
+        for loc in REAR_PARTS:
+            self.set_armor(loc, self.armor_value(loc, installed=True))
 
     def clear_loadout(self):
         """Empty the hardpoint-keyed loadout arrays (installed weapons + weapon
