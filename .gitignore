@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# PyInstaller build artifacts
+/build/
+*.spec
+
+# Save files — never commit personal game data
+*.sav
+*.bak
+
+# Loose source artwork (kept locally, not needed in repo)
+/Gemini_Generated_Image_*.ico
+*_preview.png
+
+# OS junk
+Thumbs.db
+.DS_Store

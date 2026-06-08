@@ -83,4 +83,56 @@ a byte-for-byte identical file. Still: **keep a backup.**
 
 ---
 
+## 🛠️ Build / run from source
+
+The editor is pure Python + Tkinter (Tkinter ships with Python on Windows), so
+there are no dependencies to run it from source:
+
+```bash
+python editor/gui.py
+```
+
+To rebuild the standalone EXE (requires [PyInstaller](https://pyinstaller.org/)):
+
+```bash
+pip install pyinstaller pillow
+python -m PyInstaller --noconfirm --onefile --windowed --name "MW5SaveEditor" ^
+  --icon editor/app_icon.ico ^
+  --add-data "editor/app_icon.ico;." --add-data "editor/app_icon.png;." ^
+  editor/gui.py
+```
+
+### Project layout
+
+| Path | What it is |
+|---|---|
+| `editor/ue_property.py` | Generic, lossless Unreal Engine tagged-property reader/writer |
+| `editor/savefile.py` | High-level save API (`SaveFile`, `Mech`, `Pilot`, inventory, factions) |
+| `editor/gui.py` | The Tkinter GUI |
+| `editor/mech_catalog.py` / `item_catalog.py` | Chassis + item asset-name catalogs |
+| `editor/inject_mech.py` | Standalone CLI proof-of-concept for adding a mech |
+| `editor/test_roundtrip.py` | Round-trip validation harness |
+| `tools/diff_saves.py` | Binary diff helper used while reverse-engineering |
+| `notes/format_notes.md` | Reverse-engineered save format notes (the two big gotchas live here) |
+
+## 🤝 Contributing
+
+PRs and issues welcome! Good first contributions:
+
+- **More mech / weapon / equipment asset names** — the catalogs are seeded from
+  real save data + community lists but aren't exhaustive.
+- **A "Mech Cold Storage" tab** (stored/mothballed mechs).
+- **Per-chassis max armor values** so added/swapped mechs spawn fully armored
+  instead of needing an in-game refit.
+
+The golden rule of this codebase: **a no-op save must stay byte-for-byte
+identical to the original.** `editor/test_roundtrip.py` and the model sweep in
+`notes/format_notes.md` are how that's validated — please keep it lossless.
+
+## 📄 License
+
+[MIT](LICENSE) — do whatever you like, just keep the copyright notice.
+
+---
+
 <p align="center"><i>Not affiliated with Piranha Games or Microsoft. MechWarrior is a registered trademark of its respective owners.</i></p>

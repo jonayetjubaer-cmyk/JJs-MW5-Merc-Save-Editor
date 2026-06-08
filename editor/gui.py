@@ -1,0 +1,656 @@
+"""MW5 Mercs Save Editor -- GUI.
+
+A simple Tkinter desktop editor (No Man's Sky-save-editor style):
+load a .sav, edit mechs and pilots in tabs, save (with automatic .bak backup).
+
+Run:  python gui.py
+"""
+from __future__ import annotations
+
+import os
+import random
+import shutil
+import sys
+import traceback
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox, simpledialog
+
+from savefile import SaveFile, SKILLS
+
+
+def _resource_path(name: str) -> str:
+    """Path to a bundled resource, whether running from source or a PyInstaller
+    one-file EXE (which unpacks data to sys._MEIPASS at runtime)."""
+    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, name)
+from mech_catalog import LABELED, asset_name
+from item_catalog import CATALOG, CATEGORY_INVENTORY
+
+
+DEFAULT_SAVE_DIR = os.path.expandvars(
+    r"%LOCALAPPDATA%\MW5Mercs\Saved\SaveGames"
+)
+
+
+class EditorApp(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("MW5 Mercs Save Editor")
+        self.geometry("860x680")
+        self.minsize(720, 520)
+        self._set_app_icon()
+        self.save: SaveFile | None = None
+        self.path: str | None = None
+
+        self._build_toolbar()
+
+        self.nb = ttk.Notebook(self)
+        self.nb.pack(fill="both", expand=True, padx=8, pady=(0, 8))
+        self.mech_tab = ttk.Frame(self.nb)
+        self.pilot_tab = ttk.Frame(self.nb)
+        self.inv_tab = ttk.Frame(self.nb)
+        self.faction_tab = ttk.Frame(self.nb)
+        self.nb.add(self.mech_tab, text="Mechs")
+        self.nb.add(self.pilot_tab, text="Pilots")
+        self.nb.add(self.inv_tab, text="Inventory")
+        self.nb.add(self.faction_tab, text="Factions")
+        self._build_mech_tab()
+        self._build_pilot_tab()
+        self._build_inventory_tab()
+        self._build_faction_tab()
+
+        self.status = tk.StringVar(value="Open a .sav file to begin.")
+        ttk.Label(self, textvariable=self.status, relief="sunken",
+                  anchor="w").pack(fill="x", side="bottom")
+
+    def _set_app_icon(self):
+        """Set the window / taskbar icon from the bundled app_icon.ico."""
+        ico = _resource_path("app_icon.ico")
+        if not os.path.exists(ico):
+            return
+        try:
+            self.iconbitmap(ico)            # title bar + taskbar on Windows
+        except Exception:
+            pass
+        try:
+            self._icon_img = tk.PhotoImage(file=_resource_path("app_icon.png"))
+            self.iconphoto(True, self._icon_img)  # fallback / cross-platform
+        except Exception:
+            pass
+
+    # -- toolbar -----------------------------------------------------------
+    def _build_toolbar(self):
+        bar = ttk.Frame(self)
+        bar.pack(fill="x", padx=8, pady=8)
+        ttk.Button(bar, text="Open…", command=self.on_open).pack(side="left")
+        ttk.Button(bar, text="Save", command=self.on_save).pack(side="left", padx=4)
+        ttk.Button(bar, text="Save As…", command=self.on_save_as).pack(side="left")
+
+    # -- mech tab ----------------------------------------------------------
+    def _build_mech_tab(self):
+        mwrap = ttk.Frame(self.mech_tab)
+        mwrap.pack(side="left", fill="both", expand=True, padx=(0, 4), pady=4)
+        cols = ("idx", "chassis", "guid")
+        self.mech_tree = ttk.Treeview(mwrap, columns=cols, show="headings",
+                                      selectmode="browse")
+        self.mech_tree.heading("idx", text="#")
+        self.mech_tree.heading("chassis", text="Chassis")
+        self.mech_tree.heading("guid", text="Instance GUID")
+        self.mech_tree.column("idx", width=40, anchor="center")
+        self.mech_tree.column("chassis", width=160)
+        self.mech_tree.column("guid", width=320)
+        msb = ttk.Scrollbar(mwrap, orient="vertical", command=self.mech_tree.yview)
+        self.mech_tree.configure(yscrollcommand=msb.set)
+        self.mech_tree.pack(side="left", fill="both", expand=True)
+        msb.pack(side="right", fill="y")
+
+        side = ttk.Frame(self.mech_tab)
+        side.pack(side="left", fill="y", pady=4)
+        ttk.Button(side, text="Add Mech…", command=self.on_add_mech).pack(fill="x", pady=2)
+        ttk.Button(side, text="Change Chassis…", command=self.on_change_chassis).pack(fill="x", pady=2)
+        ttk.Button(side, text="Repair (full armor)", command=self.on_repair).pack(fill="x", pady=2)
+        ttk.Button(side, text="Repair ALL Mechs", command=self.on_repair_all).pack(fill="x", pady=2)
+        ttk.Button(side, text="Remove", command=self.on_remove_mech).pack(fill="x", pady=2)
+
+    # -- pilot tab ---------------------------------------------------------
+    def _build_pilot_tab(self):
+        left = ttk.Frame(self.pilot_tab)
+        left.pack(side="left", fill="y", padx=(0, 6), pady=4)
+        self.pilot_list = tk.Listbox(left, width=22, exportselection=False)
+        self.pilot_list.pack(fill="y", expand=True)
+        self.pilot_list.bind("<<ListboxSelect>>", lambda e: self._load_pilot_form())
+        pbtns = ttk.Frame(left)
+        pbtns.pack(fill="x", pady=4)
+        ttk.Button(pbtns, text="Add Pilot…", command=self.on_add_pilot).pack(fill="x", pady=1)
+        ttk.Button(pbtns, text="Remove Pilot", command=self.on_remove_pilot).pack(fill="x", pady=1)
+
+        form = ttk.Frame(self.pilot_tab)
+        form.pack(side="left", fill="both", expand=True, pady=4)
+
+        self.pilot_vars: dict[str, tk.StringVar] = {}
+
+        def row(label, key, r):
+            ttk.Label(form, text=label).grid(row=r, column=0, sticky="w", pady=2)
+            var = tk.StringVar()
+            ttk.Entry(form, textvariable=var, width=24).grid(row=r, column=1, sticky="w", pady=2)
+            self.pilot_vars[key] = var
+
+        row("Callsign", "callsign", 0)
+        row("Full name", "full_name", 1)
+        row("Salary (C-Bills)", "salary", 2)
+        ttk.Separator(form, orient="horizontal").grid(row=3, column=0, columnspan=2, sticky="ew", pady=6)
+        ttk.Label(form, text="Skill XP", font=("", 9, "bold")).grid(row=4, column=0, sticky="w")
+        for i, sk in enumerate(SKILLS):
+            row(sk, f"skill_{sk}", 5 + i)
+
+        ttk.Button(form, text="Apply to Pilot", command=self.on_apply_pilot).grid(
+            row=5 + len(SKILLS), column=0, columnspan=2, sticky="w", pady=8)
+
+    # -- inventory tab -----------------------------------------------------
+    def _build_inventory_tab(self):
+        top = ttk.Frame(self.inv_tab)
+        top.pack(fill="x", padx=4, pady=6)
+
+        # C-Bills
+        ttk.Label(top, text="C-Bills:").grid(row=0, column=0, sticky="w")
+        self.cbills_var = tk.StringVar(value="0")
+        ttk.Entry(top, textvariable=self.cbills_var, width=16).grid(row=0, column=1, sticky="w", padx=4)
+        ttk.Button(top, text="Set C-Bills", command=self.on_set_cbills).grid(row=0, column=2, padx=4)
+        ttk.Button(top, text="Max (2,000,000,000)",
+                   command=lambda: (self.cbills_var.set("2000000000"), self.on_set_cbills())
+                   ).grid(row=0, column=3, padx=4)
+
+        ttk.Separator(self.inv_tab, orient="horizontal").pack(fill="x", padx=4, pady=2)
+
+        # Add-item row (mirrors the classic editor: Item / Count / Type / Add)
+        add = ttk.Frame(self.inv_tab)
+        add.pack(fill="x", padx=4, pady=6)
+        ttk.Label(add, text="Type:").grid(row=0, column=0, sticky="w")
+        self.inv_type_var = tk.StringVar(value="weapon")
+        type_cb = ttk.Combobox(add, textvariable=self.inv_type_var, width=12, state="readonly",
+                               values=["weapon", "equipment", "ammo"])
+        type_cb.grid(row=0, column=1, padx=4)
+        type_cb.bind("<<ComboboxSelected>>", lambda e: self._refresh_item_choices())
+
+        ttk.Label(add, text="Item:").grid(row=0, column=2, sticky="w", padx=(8, 0))
+        self.inv_item_var = tk.StringVar()
+        self.inv_item_cb = ttk.Combobox(add, textvariable=self.inv_item_var, width=36)
+        self.inv_item_cb.grid(row=0, column=3, padx=4)
+
+        ttk.Label(add, text="Count:").grid(row=0, column=4, sticky="w", padx=(8, 0))
+        self.inv_count_var = tk.StringVar(value="1")
+        ttk.Spinbox(add, from_=1, to=9999, textvariable=self.inv_count_var, width=6).grid(row=0, column=5, padx=4)
+
+        ttk.Button(add, text="Add to Inventory", command=self.on_add_item).grid(row=0, column=6, padx=8)
+
+        # Current inventory list
+        iwrap = ttk.Frame(self.inv_tab)
+        iwrap.pack(fill="both", expand=True, padx=4, pady=4)
+        cols = ("type", "item", "count")
+        self.inv_tree = ttk.Treeview(iwrap, columns=cols, show="headings")
+        self.inv_tree.heading("type", text="Asset Type")
+        self.inv_tree.heading("item", text="Item ID")
+        self.inv_tree.heading("count", text="Count")
+        self.inv_tree.column("type", width=180)
+        self.inv_tree.column("item", width=300)
+        self.inv_tree.column("count", width=70, anchor="center")
+        isb = ttk.Scrollbar(iwrap, orient="vertical", command=self.inv_tree.yview)
+        self.inv_tree.configure(yscrollcommand=isb.set)
+        self.inv_tree.pack(side="left", fill="both", expand=True)
+        isb.pack(side="right", fill="y")
+
+        btns = ttk.Frame(self.inv_tab)
+        btns.pack(fill="x", padx=4, pady=(0, 6))
+        ttk.Button(btns, text="Set Count of Selected…", command=self.on_set_item_count).pack(side="left")
+        ttk.Button(btns, text="Remove Selected", command=self.on_remove_item).pack(side="left", padx=4)
+
+        self._refresh_item_choices()
+
+    def _refresh_item_choices(self):
+        cat = self.inv_type_var.get()
+        names = [n for n, _t in CATALOG.get(cat, [])]
+        self.inv_item_cb["values"] = names
+        if names:
+            self.inv_item_var.set(names[0])
+
+    # -- faction tab -------------------------------------------------------
+    def _build_faction_tab(self):
+        top = ttk.Frame(self.faction_tab)
+        top.pack(fill="x", padx=4, pady=6)
+        ttk.Label(top, text="Company Reputation:").grid(row=0, column=0, sticky="w")
+        self.rep_var = tk.StringVar(value="0")
+        ttk.Entry(top, textvariable=self.rep_var, width=12).grid(row=0, column=1, padx=4)
+        ttk.Button(top, text="Set Reputation", command=self.on_set_reputation).grid(row=0, column=2, padx=4)
+
+        ttk.Label(self.faction_tab,
+                  text="Faction standings (typically range -100 hostile … +100 allied). "
+                       "Double-click a row to edit.",
+                  foreground="#666").pack(anchor="w", padx=6)
+
+        fwrap = ttk.Frame(self.faction_tab)
+        fwrap.pack(fill="both", expand=True, padx=6, pady=4)
+        cols = ("faction", "standing")
+        self.faction_tree = ttk.Treeview(fwrap, columns=cols, show="headings",
+                                         selectmode="browse")
+        self.faction_tree.heading("faction", text="Faction")
+        self.faction_tree.heading("standing", text="Standing")
+        self.faction_tree.column("faction", width=240)
+        self.faction_tree.column("standing", width=100, anchor="center")
+        fsb = ttk.Scrollbar(fwrap, orient="vertical", command=self.faction_tree.yview)
+        self.faction_tree.configure(yscrollcommand=fsb.set)
+        self.faction_tree.pack(side="left", fill="both", expand=True)
+        fsb.pack(side="right", fill="y")
+        self.faction_tree.bind("<Double-Button-1>", lambda e: self.on_edit_standing())
+
+        btns = ttk.Frame(self.faction_tab)
+        btns.pack(fill="x", padx=6, pady=(0, 6))
+        ttk.Button(btns, text="Edit Selected…", command=self.on_edit_standing).pack(side="left")
+        ttk.Button(btns, text="Set ALL to +100 (allied)",
+                   command=lambda: self.on_set_all_factions(100)).pack(side="left", padx=4)
+        ttk.Button(btns, text="Set ALL to 0 (neutral)",
+                   command=lambda: self.on_set_all_factions(0)).pack(side="left")
+
+    def _refresh_factions(self):
+        self.rep_var.set(str(self.save.reputation))
+        self.faction_tree.delete(*self.faction_tree.get_children())
+        for i, f in enumerate(self.save.factions()):
+            self.faction_tree.insert("", "end", iid=str(i), values=(f.name, f.standing))
+
+    def on_set_reputation(self):
+        if not self._guard():
+            return
+        try:
+            self.save.reputation = int(self.rep_var.get())
+        except ValueError:
+            return messagebox.showerror("Invalid", "Reputation must be a whole number.")
+        self.status.set(f"Set reputation to {self.save.reputation}. Remember to Save.")
+
+    def on_edit_standing(self):
+        if not self._guard():
+            return
+        sel = self.faction_tree.selection()
+        if not sel:
+            return self._need_selection()
+        idx = int(sel[0])
+        f = self.save.factions()[idx]
+        new = simpledialog.askinteger("Edit standing", f"Standing for {f.name}:",
+                                      initialvalue=f.standing, minvalue=-1000, maxvalue=1000)
+        if new is None:
+            return
+        f.standing = new
+        self._refresh_factions()
+        self.faction_tree.selection_set(str(idx))
+        self.status.set(f"Set {f.name} standing to {new}. Remember to Save.")
+
+    def on_set_all_factions(self, value):
+        if not self._guard():
+            return
+        for f in self.save.factions():
+            f.standing = value
+        self._refresh_factions()
+        self.status.set(f"Set all faction standings to {value}. Remember to Save.")
+
+    # -- file ops ----------------------------------------------------------
+    def on_open(self):
+        initial = DEFAULT_SAVE_DIR if os.path.isdir(DEFAULT_SAVE_DIR) else None
+        path = filedialog.askopenfilename(
+            title="Open MW5 save", initialdir=initial,
+            filetypes=[("MW5 save", "*.sav"), ("All files", "*.*")])
+        if not path:
+            return
+        try:
+            self.save = SaveFile.load(path)
+            self.path = path
+            self._refresh_mechs()
+            self._refresh_pilots()
+            self._refresh_inventory()
+            self._refresh_factions()
+            self.status.set(f"Loaded {os.path.basename(path)} — "
+                            f"{len(self.save.mechs())} mechs, {len(self.save.pilots())} pilots, "
+                            f"{self.save.cbills:,} C-Bills")
+        except Exception as e:
+            self._error("Failed to open save", e)
+
+    def on_save(self):
+        if not self._guard():
+            return
+        self._write(self.path, backup=True)
+
+    def on_save_as(self):
+        if not self._guard():
+            return
+        path = filedialog.asksaveasfilename(
+            title="Save As", defaultextension=".sav",
+            initialdir=os.path.dirname(self.path) if self.path else None,
+            filetypes=[("MW5 save", "*.sav"), ("All files", "*.*")])
+        if path:
+            self._write(path, backup=False)
+
+    def _write(self, path, backup):
+        try:
+            if backup and os.path.exists(path):
+                bak = path + ".bak"
+                if not os.path.exists(bak):
+                    shutil.copy2(path, bak)
+            self.save.save(path)
+            self.path = path
+            self.status.set(f"Saved {os.path.basename(path)}"
+                            + ("  (backup: .bak)" if backup else ""))
+            messagebox.showinfo("Saved", f"Wrote {os.path.basename(path)} successfully.")
+        except Exception as e:
+            self._error("Failed to save", e)
+
+    # -- mech actions ------------------------------------------------------
+    def _refresh_mechs(self):
+        self.mech_tree.delete(*self.mech_tree.get_children())
+        for i, m in enumerate(self.save.mechs()):
+            self.mech_tree.insert("", "end", iid=str(i),
+                                  values=(i, m.chassis, m.guid.hex()))
+
+    def _selected_mech_index(self):
+        sel = self.mech_tree.selection()
+        return int(sel[0]) if sel else None
+
+    def on_add_mech(self):
+        if not self._guard():
+            return
+        chassis = self._pick_chassis("Add Mech")
+        if chassis is None:
+            return
+        try:
+            self.save.add_mech(chassis)
+            self._refresh_mechs()
+            self.status.set(f"Added {chassis} (repaired). Remember to Save.")
+        except Exception as e:
+            self._error("Failed to add mech", e)
+
+    def on_change_chassis(self):
+        idx = self._selected_mech_index()
+        if idx is None:
+            return self._need_selection()
+        chassis = self._pick_chassis("Change Chassis")
+        if chassis is None:
+            return
+        m = self.save.mechs()[idx]
+        m.chassis = chassis
+        m.flush()
+        self._refresh_mechs()
+        self.status.set(f"Mech #{idx} chassis -> {chassis}. Remember to Save.")
+
+    def on_repair(self):
+        idx = self._selected_mech_index()
+        if idx is None:
+            return self._need_selection()
+        m = self.save.mechs()[idx]
+        m.repair()
+        m.flush()
+        self.status.set(f"Mech #{idx} repaired to full armor. Remember to Save.")
+
+    def on_repair_all(self):
+        if not self._guard():
+            return
+        n = 0
+        for m in self.save.mechs():
+            m.repair()
+            m.flush()
+            n += 1
+        self.status.set(f"Repaired all {n} mechs (armor restored to installed). Remember to Save.")
+        messagebox.showinfo("Repair All", f"Restored armor on {n} mechs.")
+
+    def on_remove_mech(self):
+        idx = self._selected_mech_index()
+        if idx is None:
+            return self._need_selection()
+        m = self.save.mechs()[idx]
+        if not messagebox.askyesno("Remove mech",
+                                   f"Remove mech #{idx} ({m.chassis})?"):
+            return
+        self.save.remove_mech(m.guid)
+        self._refresh_mechs()
+        self.status.set(f"Removed mech #{idx}. Remember to Save.")
+
+    def _pick_chassis(self, title):
+        variant = ChassisDialog(self, title).result
+        return asset_name(variant) if variant else None
+
+    # -- pilot actions -----------------------------------------------------
+    def _refresh_pilots(self):
+        self.pilot_list.delete(0, "end")
+        for p in self.save.pilots():
+            self.pilot_list.insert("end", p.callsign or p.full_name or "(pilot)")
+        if self.save.pilots():
+            self.pilot_list.selection_set(0)
+            self._load_pilot_form()
+
+    def _selected_pilot_index(self):
+        sel = self.pilot_list.curselection()
+        return sel[0] if sel else None
+
+    def _load_pilot_form(self):
+        idx = self._selected_pilot_index()
+        if idx is None:
+            return
+        p = self.save.pilots()[idx]
+        self.pilot_vars["callsign"].set(p.callsign)
+        self.pilot_vars["full_name"].set(p.full_name)
+        self.pilot_vars["salary"].set(str(p.salary))
+        for sk in SKILLS:
+            self.pilot_vars[f"skill_{sk}"].set(str(p.skill(sk)))
+
+    def on_apply_pilot(self):
+        if not self._guard():
+            return
+        idx = self._selected_pilot_index()
+        if idx is None:
+            return self._need_selection()
+        p = self.save.pilots()[idx]
+        try:
+            p.callsign = self.pilot_vars["callsign"].get()
+            p.full_name = self.pilot_vars["full_name"].get()
+            p.salary = int(self.pilot_vars["salary"].get())
+            for sk in SKILLS:
+                p.set_skill(sk, int(self.pilot_vars[f"skill_{sk}"].get()))
+            self._refresh_pilots()
+            self.pilot_list.selection_set(idx)
+            self.status.set(f"Applied changes to pilot #{idx}. Remember to Save.")
+        except ValueError:
+            messagebox.showerror("Invalid input", "Salary and skill XP must be whole numbers.")
+
+    def on_add_pilot(self):
+        if not self._guard():
+            return
+        callsign = simpledialog.askstring("Add Pilot", "Callsign for the new pilot:")
+        if not callsign:
+            return
+        randomize = messagebox.askyesno(
+            "Skills",
+            "Randomize this pilot's skills?\n\n"
+            "Yes = random skill XP (a freshly generated merc)\n"
+            "No  = start all skills at 0 (green rookie)")
+        if randomize:
+            skills = {sk: random.randint(300, 3500) for sk in SKILLS}
+        else:
+            skills = {sk: 0 for sk in SKILLS}
+        try:
+            self.save.add_pilot(callsign, full_name=callsign, skills=skills,
+                                salary=10000, hiring_cost=0)
+            self._refresh_pilots()
+            self.pilot_list.selection_clear(0, "end")
+            self.pilot_list.selection_set("end")
+            self.pilot_list.see("end")
+            self._load_pilot_form()
+            self.status.set(f"Added pilot '{callsign}'. Tweak skills below if you like, then Save.")
+        except Exception as e:
+            self._error("Failed to add pilot", e)
+
+    def on_remove_pilot(self):
+        if not self._guard():
+            return
+        idx = self._selected_pilot_index()
+        if idx is None:
+            return self._need_selection()
+        pilots = self.save.pilots()
+        p = pilots[idx]
+        if idx == 0:
+            return messagebox.showwarning(
+                "Can't remove", "Won't remove the first pilot (your commander).")
+        if not messagebox.askyesno("Remove pilot", f"Remove pilot '{p.callsign}'?"):
+            return
+        self.save.remove_pilot(p.persona_id)
+        self._refresh_pilots()
+        self.status.set(f"Removed pilot '{p.callsign}'. Remember to Save.")
+
+    # -- inventory actions -------------------------------------------------
+    def _refresh_inventory(self):
+        self.cbills_var.set(str(self.save.cbills))
+        self.inv_tree.delete(*self.inv_tree.get_children())
+        for it in self.save.weapon_inventory():
+            self.inv_tree.insert("", "end", values=(it.asset_type, it.asset_name, it.count),
+                                 tags=("weapon",))
+        for it in self.save.equipment_inventory():
+            self.inv_tree.insert("", "end", values=(it.asset_type, it.asset_name, it.count),
+                                 tags=("equipment",))
+
+    def on_set_cbills(self):
+        if not self._guard():
+            return
+        try:
+            self.save.cbills = int(self.cbills_var.get())
+        except ValueError:
+            return messagebox.showerror("Invalid", "C-Bills must be a whole number.")
+        self.status.set(f"Set C-Bills to {self.save.cbills:,}. Remember to Save.")
+
+    def on_add_item(self):
+        if not self._guard():
+            return
+        cat = self.inv_type_var.get()
+        name = self.inv_item_var.get().strip()
+        if not name:
+            return messagebox.showinfo("Pick item", "Choose or type an item asset name.")
+        try:
+            count = int(self.inv_count_var.get())
+        except ValueError:
+            return messagebox.showerror("Invalid", "Count must be a whole number.")
+        # resolve asset_type from catalog; fall back by category
+        asset_type = None
+        for n, t in CATALOG.get(cat, []):
+            if n == name:
+                asset_type = t
+                break
+        if asset_type is None:
+            asset_type = {"weapon": "MWProjectileWeaponDataAsset",
+                          "equipment": "MWHeatSinkDataAsset",
+                          "ammo": "MWAmmoDataAsset"}[cat]
+        inv = CATEGORY_INVENTORY[cat]
+        try:
+            self.save.add_item(inv, asset_type, name, count)
+            self._refresh_inventory()
+            self.status.set(f"Added {count}x {name}. Remember to Save.")
+        except Exception as e:
+            self._error("Failed to add item", e)
+
+    def _selected_inv_row(self):
+        sel = self.inv_tree.selection()
+        if not sel:
+            return None
+        vals = self.inv_tree.item(sel[0], "values")
+        tags = self.inv_tree.item(sel[0], "tags")
+        return {"type": vals[0], "name": vals[1], "count": vals[2],
+                "inv": tags[0] if tags else "weapon"}
+
+    def on_set_item_count(self):
+        if not self._guard():
+            return
+        row = self._selected_inv_row()
+        if row is None:
+            return self._need_selection()
+        new = simpledialog.askinteger("Set count", f"New count for {row['name']}:",
+                                      initialvalue=int(row["count"]), minvalue=0)
+        if new is None:
+            return
+        for it in (self.save.weapon_inventory() if row["inv"] == "weapon"
+                   else self.save.equipment_inventory()):
+            if it.asset_name == row["name"]:
+                it.count = new
+                break
+        self._refresh_inventory()
+        self.status.set(f"Set {row['name']} count to {new}. Remember to Save.")
+
+    def on_remove_item(self):
+        if not self._guard():
+            return
+        row = self._selected_inv_row()
+        if row is None:
+            return self._need_selection()
+        self.save.remove_item(row["inv"], row["name"])
+        self._refresh_inventory()
+        self.status.set(f"Removed {row['name']}. Remember to Save.")
+
+    # -- helpers -----------------------------------------------------------
+    def _guard(self):
+        if self.save is None:
+            messagebox.showwarning("No save", "Open a .sav file first.")
+            return False
+        return True
+
+    def _need_selection(self):
+        messagebox.showinfo("Select first", "Select an item in the list first.")
+
+    def _error(self, title, exc):
+        traceback.print_exc()
+        messagebox.showerror(title, f"{type(exc).__name__}: {exc}")
+        self.status.set(f"{title}: {exc}")
+
+
+class ChassisDialog(simpledialog.Dialog):
+    """Searchable mech picker: type to filter the 540+ chassis/variant list,
+    double-click or OK to choose. Also accepts a hand-typed variant code."""
+    def __init__(self, parent, title):
+        self.result = None
+        self.labels = [lbl for lbl, _ in LABELED]
+        self._lbl_to_variant = dict(LABELED)
+        super().__init__(parent, title)
+
+    def body(self, master):
+        ttk.Label(master, text="Search a mech (name or code), then pick one:"
+                  ).pack(padx=8, pady=(8, 2), anchor="w")
+        self.search_var = tk.StringVar()
+        ent = ttk.Entry(master, textvariable=self.search_var, width=40)
+        ent.pack(padx=8, pady=2, fill="x")
+        self.search_var.trace_add("write", lambda *a: self._filter())
+
+        frame = ttk.Frame(master)
+        frame.pack(padx=8, pady=4, fill="both", expand=True)
+        self.lb = tk.Listbox(frame, width=44, height=16, exportselection=False)
+        sb = ttk.Scrollbar(frame, command=self.lb.yview)
+        self.lb.configure(yscrollcommand=sb.set)
+        self.lb.pack(side="left", fill="both", expand=True)
+        sb.pack(side="right", fill="y")
+        self.lb.bind("<Double-Button-1>", lambda e: self.ok())
+
+        ttk.Label(master, text="(or type an exact variant code above and press OK)",
+                  foreground="#666").pack(padx=8, pady=(0, 6), anchor="w")
+        self._filter()
+        return ent
+
+    def _filter(self):
+        q = self.search_var.get().strip().lower()
+        self.lb.delete(0, "end")
+        for lbl in self.labels:
+            if q in lbl.lower():
+                self.lb.insert("end", lbl)
+        if self.lb.size():
+            self.lb.selection_set(0)
+
+    def apply(self):
+        sel = self.lb.curselection()
+        if sel:
+            lbl = self.lb.get(sel[0])
+            self.result = self._lbl_to_variant.get(lbl, lbl.split()[-1])
+        else:
+            typed = self.search_var.get().strip()
+            self.result = typed or None
+
+
+if __name__ == "__main__":
+    EditorApp().mainloop()
