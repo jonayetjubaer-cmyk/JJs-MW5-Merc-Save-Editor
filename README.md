@@ -159,6 +159,13 @@ identical to the original.** `editor/test_roundtrip.py` and the model sweep in
 
 ## 📝 Changelog
 
+**v1.2.0**
+- You can now build a loadout on a mech that has **no hardpoints** (an
+  approximate added mech). Hit **Edit Loadout…** on an empty mech and pick a mech
+  to copy a hardpoint layout from — then fit weapons and set groups as usual.
+- Approximate added mechs now keep their (emptied) hardpoints instead of being
+  fully stripped, so they're editable right away.
+
 **v1.1.0**
 - **Mech loadout editor!** Select a mech → **Edit Loadout…** to:
   - Swap, remove, or fill weapons per hardpoint (the list is filtered to each

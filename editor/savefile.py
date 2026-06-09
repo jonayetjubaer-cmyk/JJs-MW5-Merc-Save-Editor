@@ -418,6 +418,41 @@ class Mech:
                 prop.decoded.elements = []
                 prop.decoded.count = 0
 
+    def strip_weapons(self):
+        """Keep the hardpoint slots, but empty every weapon and clear all fire-
+        group flags. Unlike clear_loadout() (which deletes the slots entirely),
+        this leaves an editable, group-clean loadout: an approximate added mech
+        keeps its donor's hardpoint layout so you can fit weapons here in the
+        editor or in the in-game Mech Lab."""
+        for slot in self.weapon_slots():
+            slot.clear()
+            for n in range(1, 7):
+                slot.set_group(n, False)
+
+    def has_hardpoints(self) -> bool:
+        return bool(self.weapon_slots())
+
+    def seed_hardpoints_from(self, donor: "Mech"):
+        """Give a mech with NO hardpoints an editable (emptied) loadout by
+        copying another mech's hardpoint layout. The hardpoints reflect the
+        donor's chassis -- it's the only layout available, since the target
+        chassis's real hardpoints aren't stored in the save."""
+        ld = self._loadout()
+        dld = donor._loadout()
+        if ld is None or ld.decoded is None or dld is None or dld.decoded is None:
+            return
+        ld, dld = ld.decoded, dld.decoded
+        diw, iw = dld.get("InstalledWeapons"), ld.get("InstalledWeapons")
+        if diw is not None and diw.decoded is not None and iw is not None:
+            iw.decoded = copy.deepcopy(diw.decoded)
+        dwgi, wgi = dld.get("WeaponGroupInfo"), ld.get("WeaponGroupInfo")
+        if dwgi is not None and dwgi.decoded is not None and wgi is not None and wgi.decoded is not None:
+            for field in ("WeaponGroups", "ChainFireGroups"):
+                dsub, sub = dwgi.decoded.get(field), wgi.decoded.get(field)
+                if dsub is not None and dsub.decoded is not None and sub is not None:
+                    sub.decoded = copy.deepcopy(dsub.decoded)
+        self.strip_weapons()   # empty the copied weapons + zero the groups
+
     def flush(self):
         """Re-serialize the nested archive back into the ByteData payload."""
         w = Writer()
@@ -753,7 +788,10 @@ class SaveFile:
                 mech.chassis = chassis
             if repair:
                 mech.repair()
-            mech.clear_loadout()   # avoid stale weapon groups on a foreign chassis
+            # Keep the donor's hardpoints but empty them + clear groups: no
+            # stale weapon-group baggage (so groups don't reset to 1), yet the
+            # mech still has editable hardpoints you can fit weapons into.
+            mech.strip_weapons()
         mech.flush()
 
         wrappers.elements.append(clone_el)

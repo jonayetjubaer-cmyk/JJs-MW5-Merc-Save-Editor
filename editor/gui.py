@@ -30,7 +30,7 @@ from savefile import weapon_class, ARMOR_PARTS, REAR_PARTS
 HARDPOINT_LABEL = {"EH": "Energy", "BH": "Ballistic", "MH": "Missile", "Melee": "Melee"}
 
 
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.2.0"
 
 DEFAULT_SAVE_DIR = os.path.expandvars(
     r"%LOCALAPPDATA%\MW5Mercs\Saved\SaveGames"
@@ -393,13 +393,34 @@ class EditorApp(tk.Tk):
             return self._need_selection()
         mech = self.save.mechs()[idx]
         if not mech.weapon_slots():
-            return messagebox.showinfo(
-                "No loadout",
-                "This mech has no hardpoints to edit (it's an approximate added "
-                "mech with a stripped loadout). Refit it in the in-game Mech Lab "
-                "first, save, then reload here.")
+            if not self._seed_empty_loadout(mech, idx):
+                return
+            mech = self.save.mechs()[idx]   # re-read with the new hardpoints
         LoadoutDialog(self, mech, on_apply=lambda: (self._refresh_mechs(),
                       self.status.set(f"Loadout updated for mech #{idx}. Remember to Save.")))
+
+    def _seed_empty_loadout(self, mech, idx) -> bool:
+        """A mech with no hardpoints (an approximate added mech) needs a layout
+        before you can fit weapons. Let the user copy one from another mech.
+        Returns True if hardpoints were seeded."""
+        donors = [(i, m) for i, m in enumerate(self.save.mechs()) if m.has_hardpoints()]
+        if not donors:
+            messagebox.showinfo("No donor", "No other mech has a hardpoint layout to copy from.")
+            return False
+        labels = [f"#{i}  {mech_display(m.chassis)}" for i, m in donors]
+        pick = ChoiceDialog(
+            self, "Add a loadout",
+            f"{mech_display(mech.chassis)} has no hardpoints yet.\n\n"
+            "Pick a mech to copy a hardpoint layout from, then you can fit weapons.\n"
+            "(The hardpoints will match the chosen mech's chassis.)",
+            labels).result
+        if pick is None:
+            return False
+        donor = donors[labels.index(pick)][1]
+        mech.seed_hardpoints_from(donor)
+        mech.flush()
+        self.status.set(f"Seeded hardpoints onto mech #{idx} from {mech_display(donor.chassis)}.")
+        return True
 
     def on_change_chassis(self):
         idx = self._selected_mech_index()
@@ -762,6 +783,26 @@ class LoadoutDialog(tk.Toplevel):
         if self.on_apply:
             self.on_apply()
         self.destroy()
+
+
+class ChoiceDialog(simpledialog.Dialog):
+    """Simple modal: a prompt + a dropdown of choices. result = chosen string or None."""
+    def __init__(self, parent, title, prompt, choices):
+        self.prompt = prompt
+        self.choices = choices
+        self.result = None
+        super().__init__(parent, title)
+
+    def body(self, master):
+        ttk.Label(master, text=self.prompt, justify="left").pack(padx=10, pady=8, anchor="w")
+        self.var = tk.StringVar(value=self.choices[0])
+        cb = ttk.Combobox(master, textvariable=self.var, values=self.choices,
+                          width=40, state="readonly")
+        cb.pack(padx=10, pady=4)
+        return cb
+
+    def apply(self):
+        self.result = self.var.get()
 
 
 class ChassisDialog(simpledialog.Dialog):
