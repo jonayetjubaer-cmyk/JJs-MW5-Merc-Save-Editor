@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.5.0
+- Now built with **Nuitka** (compiled to a native binary) instead of PyInstaller, so it
+  no longer triggers antivirus/"malware" false positives the way the PyInstaller build
+  did. Functionally identical to v1.4.0. (The v1.4.0 PyInstaller build stays available.)
+
 ## v1.4.0
 - **Edit Loadout** now also edits **equipment** — heat sinks, ammo, jump jets, MASC —
   per slot, alongside weapons, fire groups, and armor. Options are filtered to each

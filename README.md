@@ -161,6 +161,11 @@ identical to the original.** `editor/test_roundtrip.py` and the model sweep in
 
 ## 📝 Changelog
 
+**v1.5.0**
+- Now built with **Nuitka** (compiled to a native binary) instead of PyInstaller.
+  Same app, but it no longer trips antivirus/"malware" false positives the way
+  the PyInstaller build did. (v1.4.0 remains available as the PyInstaller build.)
+
 **v1.4.0**
 - **Edit Loadout** now also edits **equipment** — heat sinks, **ammo**, jump
   jets, MASC — per slot, alongside weapons, fire groups, and armor. The options

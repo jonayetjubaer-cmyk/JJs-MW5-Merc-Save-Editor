@@ -19,10 +19,20 @@ from savefile import SaveFile, SKILLS
 
 
 def _resource_path(name: str) -> str:
-    """Path to a bundled resource, whether running from source or a PyInstaller
-    one-file EXE (which unpacks data to sys._MEIPASS at runtime)."""
-    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
-    return os.path.join(base, name)
+    """Path to a bundled resource, whether running from source, a PyInstaller
+    one-file EXE (sys._MEIPASS), or a Nuitka onefile build (data files sit next
+    to __file__ / the executable in the unpacked temp dir)."""
+    candidates = []
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        candidates.append(meipass)
+    candidates.append(os.path.dirname(os.path.abspath(__file__)))
+    candidates.append(os.path.dirname(os.path.abspath(sys.argv[0])))
+    for base in candidates:
+        p = os.path.join(base, name)
+        if os.path.exists(p):
+            return p
+    return os.path.join(candidates[-1], name)
 from mech_catalog import LABELED, asset_name, display as mech_display, variant_code
 from item_catalog import CATALOG, CATEGORY_INVENTORY, WEAPONS, EQUIPMENT, AMMO
 from savefile import weapon_class, ARMOR_PARTS, REAR_PARTS
@@ -30,7 +40,7 @@ from savefile import weapon_class, ARMOR_PARTS, REAR_PARTS
 HARDPOINT_LABEL = {"EH": "Energy", "BH": "Ballistic", "MH": "Missile", "Melee": "Melee"}
 
 
-APP_VERSION = "1.4.0"
+APP_VERSION = "1.5.0"
 
 DEFAULT_SAVE_DIR = os.path.expandvars(
     r"%LOCALAPPDATA%\MW5Mercs\Saved\SaveGames"
