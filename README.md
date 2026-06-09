@@ -159,6 +159,20 @@ identical to the original.** `editor/test_roundtrip.py` and the model sweep in
 
 ## 📝 Changelog
 
+**v1.3.0**
+- New **Set Hardpoints…** button: apply a real hardpoint layout to a mech, then
+  fit weapons in Edit Loadout. Layouts are harvested from your save (owned mechs,
+  market, mission records) — a same-chassis layout is exact; others are
+  "borrowed".
+- **Add Mech** now uses a chassis's *real* hardpoint layout automatically when
+  your save has one on record (e.g. a mech you've seen in a mission), so added
+  mechs come out with correct, ready-to-fit hardpoints.
+
+> ℹ️ A chassis's true hardpoints live in the game's files, not the save, so the
+> editor can only show/apply layouts it has actually seen. To get a chassis's
+> real hardpoints when none exist in your save, fit that mech once in the in-game
+> Mech Lab and save — the editor will then show them all.
+
 **v1.2.0**
 - You can now build a loadout on a mech that has **no hardpoints** (an
   approximate added mech). Hit **Edit Loadout…** on an empty mech and pick a mech

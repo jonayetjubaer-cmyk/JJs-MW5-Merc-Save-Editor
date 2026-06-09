@@ -30,7 +30,7 @@ from savefile import weapon_class, ARMOR_PARTS, REAR_PARTS
 HARDPOINT_LABEL = {"EH": "Energy", "BH": "Ballistic", "MH": "Missile", "Melee": "Melee"}
 
 
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.3.0"
 
 DEFAULT_SAVE_DIR = os.path.expandvars(
     r"%LOCALAPPDATA%\MW5Mercs\Saved\SaveGames"
@@ -115,6 +115,7 @@ class EditorApp(tk.Tk):
         side.pack(side="left", fill="y", pady=4)
         ttk.Button(side, text="Add Mech…", command=self.on_add_mech).pack(fill="x", pady=2)
         ttk.Button(side, text="Edit Loadout…", command=self.on_edit_loadout).pack(fill="x", pady=2)
+        ttk.Button(side, text="Set Hardpoints…", command=self.on_set_hardpoints).pack(fill="x", pady=2)
         ttk.Button(side, text="Change Chassis…", command=self.on_change_chassis).pack(fill="x", pady=2)
         ttk.Button(side, text="Repair (full armor)", command=self.on_repair).pack(fill="x", pady=2)
         ttk.Button(side, text="Repair ALL Mechs", command=self.on_repair_all).pack(fill="x", pady=2)
@@ -372,16 +373,24 @@ class EditorApp(tk.Tk):
             label = mech_display(chassis)
             if status == "exact":
                 self.status.set(f"Added {label} — exact copy of one you own. Remember to Save.")
+            elif status == "real-layout":
+                self.status.set(f"Added {label} with its real hardpoints (empty). "
+                                "Fit weapons in Edit Loadout. Remember to Save.")
+                messagebox.showinfo(
+                    "Mech added",
+                    f"Added a {label}. Your save had a real {label} loadout on record, "
+                    "so it got that chassis's correct (empty) hardpoints.\n\n"
+                    "Use Edit Loadout to fit weapons and set groups — no Mech Lab needed.")
             else:
-                self.status.set(f"Added {label} (approximate — strip & refit it in the Mech Lab). Remember to Save.")
+                self.status.set(f"Added {label} (approximate — set hardpoints / refit in Mech Lab). Remember to Save.")
                 messagebox.showinfo(
                     "Approximate mech added",
-                    f"You don't own a {label} to copy, so it was added as an "
-                    "approximate clone with its weapons stripped.\n\n"
-                    "Open it in the Mech Lab and refit it — its weapons and weapon "
-                    "groups will then work correctly. (Its engine/internals match the "
-                    "donor mech; a different-chassis mech can't be built perfectly "
-                    "from save data alone.)")
+                    f"You don't own a {label} and your save has no {label} loadout to "
+                    "copy, so it was added as an approximate clone with its weapons "
+                    "stripped.\n\nEither refit it in the in-game Mech Lab, or use "
+                    "\"Set Hardpoints…\" to borrow a layout, then Edit Loadout. "
+                    "(A different-chassis mech can't be built perfectly from save "
+                    "data alone.)")
         except Exception as e:
             self._error("Failed to add mech", e)
 
@@ -393,33 +402,53 @@ class EditorApp(tk.Tk):
             return self._need_selection()
         mech = self.save.mechs()[idx]
         if not mech.weapon_slots():
-            if not self._seed_empty_loadout(mech, idx):
+            if not self._apply_layout_dialog(mech, idx, empty=True):
                 return
             mech = self.save.mechs()[idx]   # re-read with the new hardpoints
         LoadoutDialog(self, mech, on_apply=lambda: (self._refresh_mechs(),
                       self.status.set(f"Loadout updated for mech #{idx}. Remember to Save.")))
 
-    def _seed_empty_loadout(self, mech, idx) -> bool:
-        """A mech with no hardpoints (an approximate added mech) needs a layout
-        before you can fit weapons. Let the user copy one from another mech.
-        Returns True if hardpoints were seeded."""
-        donors = [(i, m) for i, m in enumerate(self.save.mechs()) if m.has_hardpoints()]
-        if not donors:
-            messagebox.showinfo("No donor", "No other mech has a hardpoint layout to copy from.")
+    def on_set_hardpoints(self):
+        if not self._guard():
+            return
+        idx = self._selected_mech_index()
+        if idx is None:
+            return self._need_selection()
+        mech = self.save.mechs()[idx]
+        self._apply_layout_dialog(mech, idx, empty=False)
+
+    def _apply_layout_dialog(self, mech, idx, empty) -> bool:
+        """Apply a real hardpoint layout (harvested from anywhere in the save)
+        to a mech. The same-chassis layout is correct; others are 'borrowed'
+        (the hardpoints belong to that chassis). Returns True if applied."""
+        layouts = self.save.chassis_layouts()
+        if not layouts:
+            messagebox.showinfo("No layouts",
+                "Your save doesn't contain any mech loadout to copy hardpoints from.")
             return False
-        labels = [f"#{i}  {mech_display(m.chassis)}" for i, m in donors]
+        want = mech.chassis if mech.chassis.endswith("_MDA") else mech.chassis + "_MDA"
+        items = sorted(layouts.items(), key=lambda kv: (kv[0] != want, kv[0]))
+        labels = []
+        for ch, (iw, _wg, _cfg) in items:
+            n = len(iw.elements) if iw is not None else 0
+            tag = "  ← this chassis (correct)" if ch == want else "  (borrowed layout)"
+            labels.append(f"{mech_display(ch)}  · {n} hardpoints{tag}")
+        intro = (f"{mech_display(mech.chassis)} has no hardpoints yet.\n"
+                 if empty else f"Replace {mech_display(mech.chassis)}'s hardpoints.\n")
         pick = ChoiceDialog(
-            self, "Add a loadout",
-            f"{mech_display(mech.chassis)} has no hardpoints yet.\n\n"
-            "Pick a mech to copy a hardpoint layout from, then you can fit weapons.\n"
-            "(The hardpoints will match the chosen mech's chassis.)",
+            self, "Set hardpoints",
+            intro + "\nPick a layout to apply, then fit weapons in Edit Loadout.\n"
+            "Same-chassis layouts are correct; 'borrowed' ones come from another\n"
+            "chassis and may need an in-game Mech Lab refit to work properly.",
             labels).result
         if pick is None:
             return False
-        donor = donors[labels.index(pick)][1]
-        mech.seed_hardpoints_from(donor)
+        ch = items[labels.index(pick)][0]
+        mech.apply_layout(*layouts[ch])
         mech.flush()
-        self.status.set(f"Seeded hardpoints onto mech #{idx} from {mech_display(donor.chassis)}.")
+        self._refresh_mechs()
+        note = "correct layout" if ch == want else f"borrowed {mech_display(ch)} layout"
+        self.status.set(f"Set hardpoints on mech #{idx} ({note}). Open Edit Loadout to fit weapons. Save when done.")
         return True
 
     def on_change_chassis(self):

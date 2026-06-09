@@ -432,26 +432,46 @@ class Mech:
     def has_hardpoints(self) -> bool:
         return bool(self.weapon_slots())
 
-    def seed_hardpoints_from(self, donor: "Mech"):
-        """Give a mech with NO hardpoints an editable (emptied) loadout by
-        copying another mech's hardpoint layout. The hardpoints reflect the
-        donor's chassis -- it's the only layout available, since the target
-        chassis's real hardpoints aren't stored in the save."""
+    def apply_layout(self, iw_av, wg_av, cfg_av):
+        """Replace this mech's hardpoint layout with the given arrays (deep-
+        copied), then empty the weapons and clear groups. The arrays come from
+        SaveFile.chassis_layouts() -- a real layout harvested from the save."""
         ld = self._loadout()
-        dld = donor._loadout()
-        if ld is None or ld.decoded is None or dld is None or dld.decoded is None:
+        if ld is None or ld.decoded is None:
             return
-        ld, dld = ld.decoded, dld.decoded
-        diw, iw = dld.get("InstalledWeapons"), ld.get("InstalledWeapons")
-        if diw is not None and diw.decoded is not None and iw is not None:
-            iw.decoded = copy.deepcopy(diw.decoded)
-        dwgi, wgi = dld.get("WeaponGroupInfo"), ld.get("WeaponGroupInfo")
-        if dwgi is not None and dwgi.decoded is not None and wgi is not None and wgi.decoded is not None:
-            for field in ("WeaponGroups", "ChainFireGroups"):
-                dsub, sub = dwgi.decoded.get(field), wgi.decoded.get(field)
-                if dsub is not None and dsub.decoded is not None and sub is not None:
-                    sub.decoded = copy.deepcopy(dsub.decoded)
+        ld = ld.decoded
+        iw = ld.get("InstalledWeapons")
+        if iw is not None and iw_av is not None:
+            iw.decoded = copy.deepcopy(iw_av)
+        wgi = ld.get("WeaponGroupInfo")
+        if wgi is not None and wgi.decoded is not None:
+            wg = wgi.decoded.get("WeaponGroups")
+            if wg is not None and wg_av is not None:
+                wg.decoded = copy.deepcopy(wg_av)
+            cfg = wgi.decoded.get("ChainFireGroups")
+            if cfg is not None and cfg_av is not None:
+                cfg.decoded = copy.deepcopy(cfg_av)
         self.strip_weapons()   # empty the copied weapons + zero the groups
+
+    def _layout_bundle(self):
+        """This mech's (InstalledWeapons, WeaponGroups, ChainFireGroups) decoded
+        arrays, for use as a layout template."""
+        ld = self._loadout()
+        if ld is None or ld.decoded is None:
+            return (None, None, None)
+        ld = ld.decoded
+        iw = ld.get("InstalledWeapons")
+        wgi = ld.get("WeaponGroupInfo")
+        wg = wgi.decoded.get("WeaponGroups") if wgi and wgi.decoded else None
+        cfg = wgi.decoded.get("ChainFireGroups") if wgi and wgi.decoded else None
+        return (iw.decoded if iw else None,
+                wg.decoded if wg else None,
+                cfg.decoded if cfg else None)
+
+    def seed_hardpoints_from(self, donor: "Mech"):
+        """Give a mech an editable (emptied) loadout by copying another mech's
+        hardpoint layout."""
+        self.apply_layout(*donor._layout_bundle())
 
     def flush(self):
         """Re-serialize the nested archive back into the ByteData payload."""
@@ -724,6 +744,54 @@ class SaveFile:
                 out.append(Mech(el, bd, nested, footer))
         return out
 
+    def chassis_layouts(self) -> dict:
+        """Scan the WHOLE save (owned mechs, market listings, mission/post-
+        mission records) and return, for each chassis, the REAL hardpoint layout
+        with the most hardpoints found:
+            { chassis_asset_name: (InstalledWeapons, WeaponGroups, ChainFireGroups) }
+        These are genuine chassis layouts the game itself wrote, so applying one
+        to a mech of that chassis gives it correct, working hardpoints."""
+        best = {}  # chassis -> (count, iw, wg, cfg)
+
+        def consider(ld_decoded):
+            mda = _path(ld_decoded, "MechDataAssetId", "ID", "PrimaryAssetName")
+            iw = ld_decoded.get("InstalledWeapons")
+            if mda is None or iw is None or iw.decoded is None:
+                return
+            ch = read_fstring_payload(mda.raw_payload)
+            n = len(iw.decoded.elements)
+            if n > best.get(ch, (0,))[0]:
+                wgi = ld_decoded.get("WeaponGroupInfo")
+                wg = wgi.decoded.get("WeaponGroups") if wgi and wgi.decoded else None
+                cfg = wgi.decoded.get("ChainFireGroups") if wgi and wgi.decoded else None
+                best[ch] = (n, iw.decoded,
+                            wg.decoded if wg and wg.decoded else None,
+                            cfg.decoded if cfg and cfg.decoded else None)
+
+        def scan(pl, depth=0):
+            if depth > 60 or pl is None:
+                return
+            for p in pl.properties:
+                if p.name in ("ItemData", "Loadout") and p.decoded is not None \
+                        and p.decoded.get("MechDataAssetId") is not None:
+                    consider(p.decoded)
+                if p.decoded is not None and hasattr(p.decoded, "properties"):
+                    scan(p.decoded, depth + 1)
+                if p.decoded is not None and hasattr(p.decoded, "elements") \
+                        and getattr(p.decoded, "element_type", None) == "StructProperty":
+                    for el in p.decoded.elements:
+                        if hasattr(el, "properties"):
+                            scan(el, depth + 1)
+
+        for name in [pp.name for pp in self.model_list.properties]:
+            try:
+                scan(self.model(name).plist)
+            except Exception:
+                pass
+        for m in self.mechs():
+            scan(m.nested)
+        return {ch: (v[1], v[2], v[3]) for ch, v in best.items()}
+
     def _wrapper_chassis(self, el: PropertyList) -> str | None:
         """Read a MechLoadoutWrapper element's chassis asset name (PrimaryAssetName)."""
         bd = el.get("ByteData")
@@ -766,10 +834,11 @@ class SaveFile:
         status = "approx"
         src_index = donor_index
 
+        want = (chassis if chassis.endswith("_MDA") else chassis + "_MDA") if chassis else None
+
         # Tier 1: an owned mech of the exact chassis, with a non-empty loadout,
         # is a perfect template -- duplicate it verbatim.
-        if chassis:
-            want = chassis if chassis.endswith("_MDA") else chassis + "_MDA"
+        if want:
             for i, el in enumerate(wrappers.elements):
                 if self._wrapper_chassis(el) == want and \
                         self._mech_from_element(el).installed_weapon_count() > 0:
@@ -788,10 +857,16 @@ class SaveFile:
                 mech.chassis = chassis
             if repair:
                 mech.repair()
-            # Keep the donor's hardpoints but empty them + clear groups: no
-            # stale weapon-group baggage (so groups don't reset to 1), yet the
-            # mech still has editable hardpoints you can fit weapons into.
-            mech.strip_weapons()
+            # If the save has a REAL layout for this chassis (from a market /
+            # mission record), use it so the mech gets correct hardpoints.
+            # Otherwise keep the donor's hardpoints, emptied (no stale groups).
+            layout = self.chassis_layouts().get(want) if want else None
+            if layout is not None and layout[0] is not None and \
+                    len(layout[0].elements) > mech.installed_weapon_count():
+                mech.apply_layout(*layout)
+                status = "real-layout"
+            else:
+                mech.strip_weapons()
         mech.flush()
 
         wrappers.elements.append(clone_el)
