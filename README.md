@@ -36,6 +36,16 @@ nothing else needed.
 
 ---
 
+## 📸 Screenshots
+
+| Mechs | Pilots |
+|:---:|:---:|
+| ![Mechs tab](assets/screenshot-mechs.png) | ![Pilots tab](assets/screenshot-pilots.png) |
+| **Inventory** | **Factions** |
+| ![Inventory tab](assets/screenshot-inventory.png) | ![Factions tab](assets/screenshot-factions.png) |
+
+---
+
 ## 🕹️ How to use
 
 1. **Back up your save first** (seriously — see below).
