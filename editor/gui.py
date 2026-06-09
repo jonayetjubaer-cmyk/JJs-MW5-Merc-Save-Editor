@@ -24,13 +24,13 @@ def _resource_path(name: str) -> str:
     base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
     return os.path.join(base, name)
 from mech_catalog import LABELED, asset_name, display as mech_display, variant_code
-from item_catalog import CATALOG, CATEGORY_INVENTORY, WEAPONS
+from item_catalog import CATALOG, CATEGORY_INVENTORY, WEAPONS, EQUIPMENT, AMMO
 from savefile import weapon_class, ARMOR_PARTS, REAR_PARTS
 
 HARDPOINT_LABEL = {"EH": "Energy", "BH": "Ballistic", "MH": "Missile", "Melee": "Melee"}
 
 
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.4.0"
 
 DEFAULT_SAVE_DIR = os.path.expandvars(
     r"%LOCALAPPDATA%\MW5Mercs\Saved\SaveGames"
@@ -710,11 +710,21 @@ class LoadoutDialog(tk.Toplevel):
         for cls in self._by_class:
             self._by_class[cls].sort()
 
+        # equipment options by slot type
+        self._jumpjets = sorted((n, t) for n, t in EQUIPMENT if t == "MWJumpJetDataAsset")
+        self._general_equip = sorted([(n, t) for n, t in EQUIPMENT
+                                      if t != "MWJumpJetDataAsset"] + list(AMMO))
+
         self.slots = mech.weapon_slots()
+        self.eq_slots = mech.equipment_slots()
         self.slot_widgets = []   # (slot, weapon_var, [group_vars])
+        self.eq_widgets = []     # (equip_slot, equip_var)
         self.armor_vars = {}     # location -> StringVar
 
         self._build()
+
+    def _equip_options(self, slot_type):
+        return self._jumpjets if "JumpJet" in slot_type else self._general_equip
 
     # -- UI ---------------------------------------------------------------
     def _build(self):
@@ -760,6 +770,28 @@ class LoadoutDialog(tk.Toplevel):
                 gvars.append(gv)
             self.slot_widgets.append((slot, var, gvars))
 
+        # equipment rows (in the same scroll frame, below the weapons)
+        er = len(self.slots) + 2
+        if self.eq_slots:
+            ttk.Label(frame, text="Equipment  (heat sinks, ammo, jump jets…)",
+                      font=("", 9, "bold")).grid(row=er, column=0, columnspan=3,
+                                                 sticky="w", pady=(10, 2))
+            er += 1
+            for slot in self.eq_slots:
+                opts = self._equip_options(slot.slot_type)
+                names = ["(empty)"] + [n for n, _t in opts]
+                cur = slot.equip_name
+                if cur not in ("None", "") and cur not in names:
+                    names.insert(1, cur)
+                kind = "JumpJet" if "JumpJet" in slot.slot_type else "General"
+                ttk.Label(frame, text=f"{slot.part_label}  [{kind}]",
+                          width=30).grid(row=er, column=0, sticky="w", pady=1)
+                var = tk.StringVar(value="(empty)" if slot.is_empty else cur)
+                ttk.Combobox(frame, textvariable=var, values=names, width=24,
+                             state="readonly").grid(row=er, column=1, columnspan=6, sticky="w", padx=2)
+                self.eq_widgets.append((slot, var))
+                er += 1
+
         # armor
         ttk.Separator(self, orient="horizontal").pack(fill="x", padx=10, pady=8)
         ttk.Label(self, text="Armor (current)", font=("", 10, "bold")).pack(anchor="w", padx=10)
@@ -801,6 +833,16 @@ class LoadoutDialog(tk.Toplevel):
                     slot.set_weapon(atype, choice)
             for g in range(1, 7):
                 slot.set_group(g, gvars[g - 1].get())
+        # equipment
+        ename_to_type = {n: t for n, t in (self._jumpjets + self._general_equip)}
+        for slot, var in self.eq_widgets:
+            choice = var.get()
+            if choice == "(empty)":
+                slot.clear()
+            elif slot.is_empty or choice != slot.equip_name:
+                atype = ename_to_type.get(choice, slot.equip_type)
+                if atype and atype != "None":
+                    slot.set_equipment(atype, choice)
         # armor
         try:
             for loc, v in self.armor_vars.items():

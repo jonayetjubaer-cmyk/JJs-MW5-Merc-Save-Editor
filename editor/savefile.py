@@ -267,6 +267,54 @@ class WeaponSlot:
             _set_bool(self.group_element.get(f"bWeaponGroup{n}"), on)
 
 
+class EquipmentSlot:
+    """One SlottedEquipment entry inside a mech part (Equipment.MechPartEquipment).
+    Holds heat sinks, ammo, jump jets, MASC, etc. The slot's `slot_type`
+    constrains what fits (e.g. 'General_SlotType' takes heat sinks/ammo/general
+    gear; 'JumpJetClass5_SlotType' takes class-5 jump jets)."""
+
+    def __init__(self, element: PropertyList, mech_part: str):
+        self.element = element
+        self.mech_part = mech_part   # e.g. "EMechParts::CenterTorso"
+
+    @property
+    def slot_type(self) -> str:
+        p = _path(self.element, "SlotTypeAssetId", "ID", "PrimaryAssetName")
+        return read_fstring_payload(p.raw_payload) if p else ""
+
+    def _type_prop(self):
+        return _path(self.element, "EquipmentData", "EquipmentId", "ID",
+                     "PrimaryAssetType", "Name")
+
+    def _name_prop(self):
+        return _path(self.element, "EquipmentData", "EquipmentId", "ID", "PrimaryAssetName")
+
+    @property
+    def equip_type(self) -> str:
+        p = self._type_prop()
+        return read_fstring_payload(p.raw_payload) if p else NONE_ASSET
+
+    @property
+    def equip_name(self) -> str:
+        p = self._name_prop()
+        return read_fstring_payload(p.raw_payload) if p else NONE_ASSET
+
+    @property
+    def is_empty(self) -> bool:
+        return self.equip_name in ("", NONE_ASSET)
+
+    @property
+    def part_label(self) -> str:
+        return self.mech_part.split("::")[-1]
+
+    def set_equipment(self, asset_type: str, asset_name: str):
+        _set_leaf(self._type_prop(), write_fstring_payload(asset_type))
+        _set_leaf(self._name_prop(), write_fstring_payload(asset_name))
+
+    def clear(self):
+        self.set_equipment(NONE_ASSET, NONE_ASSET)
+
+
 class Mech:
     """A MechLoadoutWrapper element. Its real data lives in a nested archive
     (ByteData) -> MarketItemMech struct."""
@@ -362,6 +410,27 @@ class Mech:
             sid_p = el.get("HardpointSlotID")
             sid = read_fstring_payload(sid_p.raw_payload) if sid_p else ""
             out.append(WeaponSlot(el, groups_by_id.get(sid)))
+        return out
+
+    def equipment_slots(self) -> list[EquipmentSlot]:
+        ld = self._loadout()
+        if ld is None or ld.decoded is None:
+            return []
+        eq = ld.decoded.get("Equipment")
+        if eq is None or eq.decoded is None:
+            return []
+        mpe = eq.decoded.get("MechPartEquipment")
+        if mpe is None or mpe.decoded is None:
+            return []
+        out = []
+        for part in mpe.decoded.elements:
+            mp = part.get("MechPart")
+            part_name = read_fstring_payload(mp.raw_payload) if mp else ""
+            se = part.get("SlottedEquipment")
+            if se is None or se.decoded is None:
+                continue
+            for el in se.decoded.elements:
+                out.append(EquipmentSlot(el, part_name))
         return out
 
     def armor_value(self, location: str, installed: bool = False) -> float:

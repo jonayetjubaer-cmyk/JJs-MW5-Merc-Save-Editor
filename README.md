@@ -159,6 +159,12 @@ identical to the original.** `editor/test_roundtrip.py` and the model sweep in
 
 ## 📝 Changelog
 
+**v1.4.0**
+- **Edit Loadout** now also edits **equipment** — heat sinks, **ammo**, jump
+  jets, MASC — per slot, alongside weapons, fire groups, and armor. The options
+  are filtered to each slot's type (e.g. ammo/heat sinks go in general slots,
+  jump jets in jump-jet slots).
+
 **v1.3.0**
 - New **Set Hardpoints…** button: apply a real hardpoint layout to a mech, then
   fit weapons in Edit Loadout. Layouts are harvested from your save (owned mechs,
