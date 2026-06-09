@@ -15,7 +15,7 @@ import traceback
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, simpledialog
 
-from savefile import SaveFile, SKILLS
+from savefile import SaveFile, SKILLS, CAPPED_SKILLS, MAX_SKILL_CAP
 
 
 def _resource_path(name: str) -> str:
@@ -40,7 +40,7 @@ from savefile import weapon_class, ARMOR_PARTS, REAR_PARTS
 HARDPOINT_LABEL = {"EH": "Energy", "BH": "Ballistic", "MH": "Missile", "Melee": "Melee"}
 
 
-APP_VERSION = "1.6.0"
+APP_VERSION = "1.7.0"
 
 DEFAULT_SAVE_DIR = os.path.expandvars(
     r"%LOCALAPPDATA%\MW5Mercs\Saved\SaveGames"
@@ -151,19 +151,35 @@ class EditorApp(tk.Tk):
         def row(label, key, r):
             ttk.Label(form, text=label).grid(row=r, column=0, sticky="w", pady=2)
             var = tk.StringVar()
-            ttk.Entry(form, textvariable=var, width=24).grid(row=r, column=1, sticky="w", pady=2)
+            ttk.Entry(form, textvariable=var, width=24).grid(row=r, column=1, columnspan=2,
+                                                             sticky="w", pady=2)
             self.pilot_vars[key] = var
 
         row("Callsign", "callsign", 0)
         row("Full name", "full_name", 1)
         row("Salary (C-Bills)", "salary", 2)
-        ttk.Separator(form, orient="horizontal").grid(row=3, column=0, columnspan=2, sticky="ew", pady=6)
-        ttk.Label(form, text="Skill XP", font=("", 9, "bold")).grid(row=4, column=0, sticky="w")
+        ttk.Separator(form, orient="horizontal").grid(row=3, column=0, columnspan=3, sticky="ew", pady=6)
+        ttk.Label(form, text="Skill", font=("", 9, "bold")).grid(row=4, column=0, sticky="w")
+        ttk.Label(form, text="XP", font=("", 9, "bold")).grid(row=4, column=1, sticky="w")
+        ttk.Label(form, text="Cap (max 10)", font=("", 9, "bold")).grid(row=4, column=2, sticky="w")
         for i, sk in enumerate(SKILLS):
-            row(sk, f"skill_{sk}", 5 + i)
+            r = 5 + i
+            ttk.Label(form, text=sk).grid(row=r, column=0, sticky="w", pady=1)
+            xpv = tk.StringVar()
+            ttk.Entry(form, textvariable=xpv, width=12).grid(row=r, column=1, sticky="w", pady=1)
+            self.pilot_vars[f"skill_{sk}"] = xpv
+            capv = tk.StringVar()
+            cap_entry = ttk.Entry(form, textvariable=capv, width=6)
+            if sk not in CAPPED_SKILLS:   # Gunnery/Piloting don't use the cap system
+                cap_entry.configure(state="disabled")
+            cap_entry.grid(row=r, column=2, sticky="w", pady=1)
+            self.pilot_vars[f"cap_{sk}"] = capv
 
+        br = 5 + len(SKILLS)
         ttk.Button(form, text="Apply to Pilot", command=self.on_apply_pilot).grid(
-            row=5 + len(SKILLS), column=0, columnspan=2, sticky="w", pady=8)
+            row=br, column=0, columnspan=2, sticky="w", pady=8)
+        ttk.Button(form, text="Max caps (10)", command=self.on_max_caps).grid(
+            row=br, column=2, sticky="w", pady=8)
 
     # -- inventory tab -----------------------------------------------------
     def _build_inventory_tab(self):
@@ -533,6 +549,7 @@ class EditorApp(tk.Tk):
         self.pilot_vars["salary"].set(str(p.salary))
         for sk in SKILLS:
             self.pilot_vars[f"skill_{sk}"].set(str(p.skill(sk)))
+            self.pilot_vars[f"cap_{sk}"].set(str(p.skill_cap(sk)))
 
     def on_apply_pilot(self):
         if not self._guard():
@@ -547,11 +564,21 @@ class EditorApp(tk.Tk):
             p.salary = int(self.pilot_vars["salary"].get())
             for sk in SKILLS:
                 p.set_skill(sk, int(self.pilot_vars[f"skill_{sk}"].get()))
+                if sk in CAPPED_SKILLS:
+                    p.set_skill_cap(sk, int(self.pilot_vars[f"cap_{sk}"].get()))
             self._refresh_pilots()
             self.pilot_list.selection_set(idx)
             self.status.set(f"Applied changes to pilot #{idx}. Remember to Save.")
         except ValueError:
-            messagebox.showerror("Invalid input", "Salary and skill XP must be whole numbers.")
+            messagebox.showerror("Invalid input", "Salary, skill XP and caps must be whole numbers.")
+
+    def on_max_caps(self):
+        """Fill the cap fields for the selected pilot with the max (10)."""
+        if self._selected_pilot_index() is None:
+            return self._need_selection()
+        for sk in CAPPED_SKILLS:
+            self.pilot_vars[f"cap_{sk}"].set(str(MAX_SKILL_CAP))
+        self.status.set("Caps set to 10 — click 'Apply to Pilot' to save the change.")
 
     def on_add_pilot(self):
         if not self._guard():

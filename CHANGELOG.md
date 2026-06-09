@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.7.0
+- Pilot **skill caps** are now editable. Each skill in the Pilots tab has a Cap (1–10)
+  field next to its XP, plus a "Max caps (10)" button — set a pilot to full potential and
+  train them up in-game. (Gunnery/Piloting don't use the cap system.)
+
 ## v1.6.0
 - Builds and releases are now automated via GitHub Actions: a version tag compiles the
   Nuitka EXE and publishes it to the GitHub release (and Nexus Mods). No functional

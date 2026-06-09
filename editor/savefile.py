@@ -561,6 +561,10 @@ class Mech:
 
 SKILLS = ["Gunnery", "Ballistics", "Energy", "Missile",
           "Piloting", "Evasiveness", "Shielding", "HeatManagement"]
+# Skills that use the 1-10 cap system (Gunnery/Piloting don't -- their cap is 0).
+CAPPED_SKILLS = ["Ballistics", "Energy", "Missile",
+                 "Evasiveness", "Shielding", "HeatManagement"]
+MAX_SKILL_CAP = 10
 
 
 class Pilot:
@@ -610,6 +614,31 @@ class Pilot:
         exp = node.decoded.get("TotalExp")
         if exp is not None:
             _set_leaf(exp, write_int(value))
+
+    def skill_cap(self, name: str) -> int:
+        """A skill's cap (max potential), 0-10. The 6 sub-skills (Ballistics,
+        Energy, Missile, Evasiveness, Shielding, HeatManagement) use 1-10;
+        Gunnery and Piloting are always 0 (they don't use the cap system)."""
+        sk = self.element.get("Skills")
+        if sk is None or sk.decoded is None:
+            return 0
+        node = sk.decoded.get(name)
+        if node is None or node.decoded is None:
+            return 0
+        cap = node.decoded.get("SkillCap")
+        return cap.raw_payload[0] if cap and cap.raw_payload else 0
+
+    def set_skill_cap(self, name: str, value: int):
+        sk = self.element.get("Skills")
+        if sk is None or sk.decoded is None:
+            return
+        node = sk.decoded.get(name)
+        if node is None or node.decoded is None:
+            return
+        cap = node.decoded.get("SkillCap")
+        if cap is not None:
+            # SkillCap is a 1-byte ByteProperty; size stays 1, so just swap the byte.
+            cap.raw_payload = bytes([max(0, min(255, int(value)))])
 
     @property
     def salary(self) -> int:
