@@ -38,11 +38,13 @@ nothing else needed.
 
 ## 📸 Screenshots
 
-| Mechs | Pilots |
+| Mechs | Loadout editor (weapons · equipment · armor) |
 |:---:|:---:|
-| ![Mechs tab](assets/screenshot-mechs.png) | ![Pilots tab](assets/screenshot-pilots.png) |
-| **Inventory** | **Factions** |
-| ![Inventory tab](assets/screenshot-inventory.png) | ![Factions tab](assets/screenshot-factions.png) |
+| ![Mechs tab](assets/screenshot-mechs.png) | ![Loadout editor](assets/screenshot-loadout.png) |
+| **Pilots** | **Inventory** |
+| ![Pilots tab](assets/screenshot-pilots.png) | ![Inventory tab](assets/screenshot-inventory.png) |
+| **Factions** | **Set Hardpoints** |
+| ![Factions tab](assets/screenshot-factions.png) | ![Set Hardpoints](assets/screenshot-sethardpoints.png) |
 
 ---
 
