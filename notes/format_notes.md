@@ -178,10 +178,10 @@ Confirmed present at ALL FOUR nested-archive levels:
 4. Each `MechLoadoutWrapper.ByteData` nested archive:
    `[int32 len][PROPLIST][4-byte footer]`
 
-Our generic round-trip sweep never caught this because it only compared
+The generic round-trip sweep never caught this because it only compared
 `raw_payload[:consumed]` (deliberately excluding the unmodeled tail) — so the
-parser "passing" at 29/29 only proved we decode everything UP TO the
-terminator correctly, not that we'd correctly preserve what comes after when
+parser "passing" at 29/29 only proved the decode works UP TO the
+terminator correctly, not that it would correctly preserve what comes after when
 **rebuilding** a region from its decoded form (as opposed to copying
 `raw_payload` verbatim, which is what normal round-trip does and why it never
 showed up there).
@@ -215,16 +215,16 @@ be zero in single-player saves — but treat it as an opaque footer, not as
    to `MechStorageModel.MechStorageList` AND a matching mech-def entry to whatever
    array in `InventoryModel` holds them, with a fresh GUID linking the two.
 3. Because this changes array length (and therefore every enclosing size field —
-   StructProperty/ArrayProperty/ByteProperty-blob/top-level), our writer must
+   StructProperty/ArrayProperty/ByteProperty-blob/top-level), the writer must
    recompute sizes bottom-up, which `ue_property.py` is designed to do via the
    `decoded` tree (raw blobs are kept verbatim; decoded structures resync sizes).
 
 ### Implication for the build plan
 
 Because this is the well-documented standard UE tagged-property format (not a
-custom MW5-specific encoding), we don't need to byte-diff our way to a parser.
+custom MW5-specific encoding), there's no need to byte-diff a parser into existence.
 Plan: adapt/port a generic UE property-tree reader+writer (prior art exists for
-other UE games, e.g. `palworld-save-tools`' GVAS reader, `uesave-rs`) so we get
+other UE games, e.g. `palworld-save-tools`' GVAS reader, `uesave-rs`) to get
 a structured dump (JSON-like tree of name/type/value) of the whole save, edit
 values in that structure, and re-serialize back to bytes preserving exact
 layout/sizes. Byte-diffing is still useful later to map *semantic* meaning

@@ -9,10 +9,10 @@ a sequence of entries shaped like:
 
 terminated by an entry whose name is the literal string "None".
 
-Design goal: LOSSLESS ROUND-TRIP. Every property we don't have a specific
-decoder for is kept as a raw byte blob and written back byte-for-byte. Types we
+Design goal: LOSSLESS ROUND-TRIP. Every property without a specific
+decoder for is kept as a raw byte blob and written back byte-for-byte. Types it
 DO decode (struct/array/primitives) are turned into Python structures that can
-be edited and re-serialized, with sizes recomputed on write. This lets us parse
+be edited and re-serialized, with sizes recomputed on write. This lets the tool parse
 just enough to do useful edits (e.g. add array elements) without having to
 model 100% of MW5's custom struct types up front.
 """
@@ -130,7 +130,7 @@ KNOWN_RAW_STRUCTS = {
 class Property:
     """One entry in a tagged-property list.
 
-    `decoded` holds a structured representation when we understand the type
+    `decoded` holds a structured representation when the type is understood
     (currently: Struct -> PropertyList, Array -> ArrayValue). Everything else
     is kept verbatim in `raw_payload` and written back unchanged.
     """
@@ -141,7 +141,7 @@ class Property:
     decoded: Any = None      # PropertyList | ArrayValue | None
     # ArrayProperty quirk: every array payload is preceded by a single byte
     # that ISN'T counted in the FPropertyTag `size` field (observed as 0x00
-    # in all cases so far, but we read+store the real byte for losslessness).
+    # in all cases so far, but the real byte is read+stored for losslessness).
     array_leading_byte: bytes | None = None
     # Same quirk for StructProperty payloads of "raw" struct types (KNOWN_RAW_STRUCTS):
     # the actual region is `size + 1` bytes = [1 leading byte][size-byte value].
@@ -223,7 +223,7 @@ def _read_property_body(r: Reader, name: str, ptype: str) -> Property:
         # (key_type+value_type, or just element_type for sets), then content
         # of `size + 1` bytes -- same universal "+1 uncounted leading byte"
         # quirk. Content = [1 leading byte][num-to-remove:int32][num-entries:
-        # int32][entries...]. We don't model entry encoding (it depends on the
+        # int32][entries...]. Entry encoding isn't modelled (it depends on the
         # key/value property types) -- keep the whole thing as an opaque
         # verbatim blob for lossless round-trip.
         sub_types = []
@@ -243,13 +243,13 @@ def _read_property_body(r: Reader, name: str, ptype: str) -> Property:
         # Quirk observed in real saves (confirmed across ByteProperty AND
         # StructProperty arrays): every ArrayProperty payload is preceded by a
         # single byte that ISN'T counted in the FPropertyTag `size` field, so
-        # the actual serialized region is `size + 1` bytes. We read it as its
+        # the actual serialized region is `size + 1` bytes. It's read as its
         # own field (always 0x00 so far) so the writer can reproduce it.
         leading_byte = r.read(1)
         payload = r.read(size)
 
         if element_type == "ByteProperty":
-            # Commonly holds a nested archive blob we parse separately --
+            # Commonly holds a nested archive blob parsed separately --
             # keep verbatim rather than trying to structure-decode it.
             return Property(name, ptype, raw_header, payload, None,
                             array_leading_byte=leading_byte)
@@ -280,9 +280,9 @@ def _read_property_body(r: Reader, name: str, ptype: str) -> Property:
 
     # Scalar / unknown types: there's a single trailing zero byte after the
     # size for most scalar property tags (the "has value" / terminator byte in
-    # newer UE versions). We've observed this pattern (size, then 0x00, then
+    # newer UE versions). This pattern shows up (size, then 0x00, then
     # payload) in the dumps; keep it in raw_header and treat the rest as opaque
-    # payload so round-trip stays exact regardless of whether our guess about
+    # payload so round-trip stays exact regardless of whether the guess about
     # this byte's meaning is right.
     trailing = r.read(1)
     raw_header = r.data[header_start:r.pos]
@@ -293,9 +293,9 @@ def _read_property_body(r: Reader, name: str, ptype: str) -> Property:
 def _try_decode_struct_payload(payload: bytes, struct_name: str):
     """Most gameplay structs (anything not a core-engine math/date type) are
     serialized as a nested tagged-property list. Core types like Vector,
-    Rotator, Guid, DateTime, etc. are raw fixed-layout structs we don't decode.
-    We detect "is this a property list" by trying to parse it and checking that
-    we consumed it cleanly down to the 'None' terminator."""
+    Rotator, Guid, DateTime, etc. are raw fixed-layout structs left undecoded.
+    Detect "is this a property list" by trying to parse it and checking that
+    it was consumed cleanly down to the 'None' terminator."""
     if struct_name in KNOWN_RAW_STRUCTS:
         return None
     try:
@@ -367,7 +367,7 @@ def write_property_list(w: Writer, plist: PropertyList):
 
 def _write_property_body(w: Writer, prop: Property):
     if prop.type == "StructProperty":
-        # raw_header = [size:int64][struct_name:FString][guid:16]; we must
+        # raw_header = [size:int64][struct_name:FString][guid:16]; must
         # rewrite the size, struct_name/guid are unchanged so re-emit them by
         # re-reading from raw_header.
         rr = Reader(prop.raw_header)
@@ -463,11 +463,11 @@ def _serialize_array_payload(prop: Property) -> bytes:
     w = Writer()
     w.i32(av.count)
     if av.element_type == "StructProperty":
-        # Re-emit the inner tag. We don't currently track a separate "inner
+        # Re-emit the inner tag. Not currently tracking a separate "inner
         # property name" so reuse the array's own name/type framing: in
         # practice MW5 inner tags mirror the outer array's name with the
-        # element struct type — but to stay lossless we cache the original
-        # inner header bytes the first time we decode (see ArrayValue).
+        # element struct type — but to stay lossless, cache the original
+        # inner header bytes the first time it's decoded (see ArrayValue).
         w.fstring(av.inner_tag_name)
         w.fstring("StructProperty")
 

@@ -48,12 +48,12 @@ def get_nested_archive(byte_data_prop):
     tagged-property archive: [int32 length][PROPLIST][FOOTER].
 
     CRITICAL: the property list does NOT consume the whole declared region --
-    every nested archive we've found (this one, PersistentModelData's, and each
+    every nested archive found (this one, PersistentModelData's, and each
     Model UObject's) ends with 4 extra bytes (observed as 00 00 00 00) beyond
-    the 'None' terminator, still WITHIN the declared length. We must capture
+    the 'None' terminator, still WITHIN the declared length. Must capture
     that footer and write it back verbatim, or the engine chokes on truncated/
     misaligned data downstream (silently -- this is what caused "all mechs
-    vanished with no error" the first time around: we rebuilt these archives
+    vanished with no error" the first time around: these archives were rebuilt
     from the decoded property list alone and dropped the footer at 3 nested
     levels simultaneously).
     """
@@ -122,7 +122,7 @@ def inject_mech(data: bytes, new_chassis_name: str | None = None) -> bytes:
 
     # NOTE: at every one of these nested-archive levels, the property list does
     # NOT consume the full declared region -- there's a fixed-size footer
-    # (observed: 4 zero bytes) after the 'None' terminator that we MUST capture
+    # (observed: 4 zero bytes) after the 'None' terminator that MUST be captured
     # and re-emit verbatim. (See get_nested_archive's docstring for the full
     # story of how dropping these caused "all mechs vanished, no error".)
     pmd = plist.get("PersistentModelData")

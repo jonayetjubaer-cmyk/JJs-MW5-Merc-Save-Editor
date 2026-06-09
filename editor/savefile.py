@@ -12,7 +12,7 @@ notes/format_notes.md) behind a clean object model:
     save.save(out_path)
 
 Everything that isn't explicitly edited is preserved byte-for-byte: only the
-models we touch (SaveStateModel / MechStorageModel / RosterModel) are rebuilt,
+models that get touched (SaveStateModel / MechStorageModel / RosterModel) are rebuilt,
 and they are rebuilt by re-serializing their decoded property list and re-
 appending their captured footer, so sizes resync but layout is exact.
 """
@@ -66,7 +66,7 @@ def read_text_property(payload: bytes) -> str:
     Two forms occur in MW5 pilot names:
       * simple base/invariant:  [flags i32][0xff][i32=1][FString]
       * formatted ("{rank} {name}" with arg substitutions): a richer tree.
-    We pull out the LAST embedded FString, which is the human-readable value in
+    Pulls out the LAST embedded FString, which is the human-readable value in
     both cases (the final resolved/source string)."""
     r = Reader(payload)
     last = None
@@ -401,7 +401,7 @@ class Mech:
     def clear_loadout(self):
         """Empty the hardpoint-keyed loadout arrays (installed weapons + weapon
         groups + chain-fire groups). Used when adding an *approximate* mech of a
-        chassis we have no exact template for: stripping these avoids carrying
+        chassis with no exact template: stripping these avoids carrying
         the donor's stale, wrong-chassis weapon-group entries (which is what made
         added mechs' groups reset to 1). The mech keeps its core equipment/engine
         and armor, so it loads as a weaponless chassis the player refits in the

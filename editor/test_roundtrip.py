@@ -1,5 +1,5 @@
-"""Round-trip test: read a .sav into our property model, write it back out,
-and confirm the bytes match exactly. This is how we validate (or disprove) our
+"""Round-trip test: read a .sav into the property model, write it back out,
+and confirm the bytes match exactly. This is how the byte layout is validated (or disproven) against
 assumptions about the UE tagged-property byte layout against real game data.
 
 Usage:
@@ -33,7 +33,7 @@ def main():
 
     print(f"re-serialized to {len(out)} bytes")
 
-    # Compare only the region we parsed (trailing bytes after the top-level
+    # Compare only the region that was parsed (trailing bytes after the top-level
     # property list, if any, are not yet modeled).
     original_region = data[:consumed]
     if out == original_region:
