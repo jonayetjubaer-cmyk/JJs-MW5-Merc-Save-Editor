@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.6.0
+- Builds and releases are now automated via GitHub Actions: a version tag compiles the
+  Nuitka EXE and publishes it to the GitHub release (and Nexus Mods). No functional
+  changes from v1.5.0.
+
 ## v1.5.0
 - Now built with **Nuitka** (compiled to a native binary) instead of PyInstaller, so it
   no longer triggers antivirus/"malware" false positives the way the PyInstaller build

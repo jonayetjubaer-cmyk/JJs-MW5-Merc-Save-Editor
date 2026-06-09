@@ -161,6 +161,11 @@ identical to the original.** `editor/test_roundtrip.py` and the model sweep in
 
 ## 📝 Changelog
 
+**v1.6.0**
+- Builds and releases are now **automated via GitHub Actions** — a version tag
+  compiles the Nuitka EXE and publishes it to the GitHub release (and Nexus).
+  No functional changes from v1.5.0.
+
 **v1.5.0**
 - Now built with **Nuitka** (compiled to a native binary) instead of PyInstaller.
   Same app, but it no longer trips antivirus/"malware" false positives the way
