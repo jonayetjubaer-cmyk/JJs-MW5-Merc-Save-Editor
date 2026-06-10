@@ -890,6 +890,59 @@ class SaveFile:
             scan(m.nested)
         return {ch: (v[1], v[2], v[3]) for ch, v in best.items()}
 
+    def referenced_items(self) -> dict:
+        """Scan the WHOLE save for every weapon / equipment / ammo asset it
+        references (owned mechs, inventory, market, mission records, enemy
+        loadouts...) and return them grouped for the editor:
+
+            {"weapon": [(name, type), ...],
+             "equipment": [(name, type), ...],
+             "ammo": [(name, type), ...]}
+
+        Every name here is one the game itself wrote, so it's a guaranteed-valid
+        asset id -- this is how rare/DLC gear becomes available to add: as soon as
+        you've seen it in a market or mission, it shows up in the dropdowns."""
+        WEAPON_T = {"MWTraceWeaponDataAsset", "MWProjectileWeaponDataAsset",
+                    "MWMissileWeaponDataAsset", "MWMeleeWeaponDataAsset"}
+        EQUIP_T = {"MWHeatSinkDataAsset", "MWJumpJetDataAsset", "MWMASCDataAsset"}
+        out = {"weapon": set(), "equipment": set(), "ammo": set()}
+
+        def scan(pl, depth=0):
+            if depth > 60 or pl is None:
+                return
+            for p in pl.properties:
+                if p.name == "ID" and p.decoded is not None:
+                    pat = p.decoded.get("PrimaryAssetType")
+                    nam = p.decoded.get("PrimaryAssetName")
+                    if pat is not None and nam is not None and pat.decoded is not None:
+                        tn = pat.decoded.get("Name")
+                        if tn is not None:
+                            t = read_fstring_payload(tn.raw_payload)
+                            n = read_fstring_payload(nam.raw_payload)
+                            if n and n != "None":
+                                if t in WEAPON_T:
+                                    out["weapon"].add((n, t))
+                                elif t == "MWAmmoDataAsset":
+                                    out["ammo"].add((n, t))
+                                elif t in EQUIP_T:
+                                    out["equipment"].add((n, t))
+                if p.decoded is not None and hasattr(p.decoded, "properties"):
+                    scan(p.decoded, depth + 1)
+                if p.decoded is not None and hasattr(p.decoded, "elements") \
+                        and getattr(p.decoded, "element_type", None) == "StructProperty":
+                    for el in p.decoded.elements:
+                        if hasattr(el, "properties"):
+                            scan(el, depth + 1)
+
+        for name in [pp.name for pp in self.model_list.properties]:
+            try:
+                scan(self.model(name).plist)
+            except Exception:
+                pass
+        for m in self.mechs():
+            scan(m.nested)
+        return {k: sorted(v) for k, v in out.items()}
+
     def _wrapper_chassis(self, el: PropertyList) -> str | None:
         """Read a MechLoadoutWrapper element's chassis asset name (PrimaryAssetName)."""
         bd = el.get("ByteData")

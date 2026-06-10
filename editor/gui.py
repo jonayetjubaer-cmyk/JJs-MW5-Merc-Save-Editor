@@ -40,7 +40,7 @@ from savefile import weapon_class, ARMOR_PARTS, REAR_PARTS
 HARDPOINT_LABEL = {"EH": "Energy", "BH": "Ballistic", "MH": "Missile", "Melee": "Melee"}
 
 
-APP_VERSION = "1.7.0"
+APP_VERSION = "1.8.0"
 
 DEFAULT_SAVE_DIR = os.path.expandvars(
     r"%LOCALAPPDATA%\MW5Mercs\Saved\SaveGames"
@@ -56,6 +56,8 @@ class EditorApp(tk.Tk):
         self._set_app_icon()
         self.save: SaveFile | None = None
         self.path: str | None = None
+        # item catalog (static defaults; merged with save-referenced items on load)
+        self.cat = {"weapon": list(WEAPONS), "equipment": list(EQUIPMENT), "ammo": list(AMMO)}
 
         self._build_toolbar()
 
@@ -243,7 +245,7 @@ class EditorApp(tk.Tk):
 
     def _refresh_item_choices(self):
         cat = self.inv_type_var.get()
-        names = [n for n, _t in CATALOG.get(cat, [])]
+        names = [n for n, _t in self.cat.get(cat, [])]
         self.inv_item_cb["values"] = names
         if names:
             self.inv_item_var.set(names[0])
@@ -325,6 +327,21 @@ class EditorApp(tk.Tk):
         self._refresh_factions()
         self.status.set(f"Set all faction standings to {value}. Remember to Save.")
 
+    def _build_item_catalog(self):
+        """Merge the built-in item lists with everything the loaded save
+        references, so rare/DLC gear the player has encountered is selectable.
+        Save-referenced names win on type (they're the ground truth)."""
+        ref = self.save.referenced_items() if self.save else {}
+        cat = {}
+        for key, static in (("weapon", WEAPONS), ("equipment", EQUIPMENT), ("ammo", AMMO)):
+            seen = {}
+            for n, t in list(static):
+                seen[n] = t
+            for n, t in ref.get(key, []):
+                seen[n] = t   # save-referenced overrides any guessed type
+            cat[key] = sorted(seen.items())
+        self.cat = cat
+
     # -- file ops ----------------------------------------------------------
     def on_open(self):
         initial = DEFAULT_SAVE_DIR if os.path.isdir(DEFAULT_SAVE_DIR) else None
@@ -336,6 +353,7 @@ class EditorApp(tk.Tk):
         try:
             self.save = SaveFile.load(path)
             self.path = path
+            self._build_item_catalog()
             self._refresh_mechs()
             self._refresh_pilots()
             self._refresh_inventory()
@@ -431,7 +449,7 @@ class EditorApp(tk.Tk):
             if not self._apply_layout_dialog(mech, idx, empty=True):
                 return
             mech = self.save.mechs()[idx]   # re-read with the new hardpoints
-        LoadoutDialog(self, mech, on_apply=lambda: (self._refresh_mechs(),
+        LoadoutDialog(self, mech, catalog=self.cat, on_apply=lambda: (self._refresh_mechs(),
                       self.status.set(f"Loadout updated for mech #{idx}. Remember to Save.")))
 
     def on_set_hardpoints(self):
@@ -657,7 +675,7 @@ class EditorApp(tk.Tk):
             return messagebox.showerror("Invalid", "Count must be a whole number.")
         # resolve asset_type from catalog; fall back by category
         asset_type = None
-        for n, t in CATALOG.get(cat, []):
+        for n, t in self.cat.get(cat, []):
             if n == name:
                 asset_type = t
                 break
@@ -730,7 +748,7 @@ class LoadoutDialog(tk.Toplevel):
     """Full per-mech loadout editor: weapons (per hardpoint, class-filtered),
     fire groups, and armor."""
 
-    def __init__(self, parent, mech, on_apply=None):
+    def __init__(self, parent, mech, on_apply=None, catalog=None):
         super().__init__(parent)
         self.mech = mech
         self.on_apply = on_apply
@@ -738,9 +756,15 @@ class LoadoutDialog(tk.Toplevel):
         self.geometry("760x620")
         self.transient(parent)
 
+        # item catalog: use the save-merged one if given, else the static lists
+        cat = catalog or {"weapon": list(WEAPONS), "equipment": list(EQUIPMENT), "ammo": list(AMMO)}
+        weapons = cat.get("weapon", WEAPONS)
+        equipment = cat.get("equipment", EQUIPMENT)
+        ammo = cat.get("ammo", AMMO)
+
         # weapon options per hardpoint class (name list), from the catalog
         self._by_class = {"EH": [], "BH": [], "MH": [], "Melee": []}
-        for name, atype in WEAPONS:
+        for name, atype in weapons:
             cls = weapon_class(name, atype)
             if cls in self._by_class:
                 self._by_class[cls].append((name, atype))
@@ -748,9 +772,9 @@ class LoadoutDialog(tk.Toplevel):
             self._by_class[cls].sort()
 
         # equipment options by slot type
-        self._jumpjets = sorted((n, t) for n, t in EQUIPMENT if t == "MWJumpJetDataAsset")
-        self._general_equip = sorted([(n, t) for n, t in EQUIPMENT
-                                      if t != "MWJumpJetDataAsset"] + list(AMMO))
+        self._jumpjets = sorted((n, t) for n, t in equipment if t == "MWJumpJetDataAsset")
+        self._general_equip = sorted([(n, t) for n, t in equipment
+                                      if t != "MWJumpJetDataAsset"] + list(ammo))
 
         self.slots = mech.weapon_slots()
         self.eq_slots = mech.equipment_slots()

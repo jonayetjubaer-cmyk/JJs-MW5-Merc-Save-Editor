@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.8.0
+- Rare / DLC weapons and gear now appear in the dropdowns. On load, the editor harvests
+  every weapon/equipment/ammo your save references (markets, missions, enemy mechs, your
+  own gear) and merges them into the Inventory and Loadout pickers — so anything you've
+  encountered (Clan ER PPCs, pulse/chem lasers, Inferno/Hotloaded ammo, etc.) is
+  selectable, with guaranteed-valid asset names.
+
 ## v1.7.0
 - Pilot **skill caps** are now editable. Each skill in the Pilots tab has a Cap (1–10)
   field next to its XP, plus a "Max caps (10)" button — set a pilot to full potential and

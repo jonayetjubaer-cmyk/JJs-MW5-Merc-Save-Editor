@@ -161,6 +161,14 @@ identical to the original.** `editor/test_roundtrip.py` and the model sweep in
 
 ## 📝 Changelog
 
+**v1.8.0**
+- **Rare / DLC weapons & gear** now appear in the dropdowns. When a save loads,
+  the editor harvests every weapon/equipment/ammo your save references (from
+  markets, missions, enemy mechs, your own gear) and adds them to the Inventory
+  and Loadout pickers — so anything you've encountered (Clan ER PPCs, pulse
+  lasers, chem lasers, Inferno/Hotloaded ammo, etc.) is selectable, with
+  guaranteed-valid names.
+
 **v1.7.0**
 - **Pilot skill caps** are now editable! Each skill in the Pilots tab has a
   **Cap (1–10)** field next to its XP, plus a **Max caps (10)** button — set a
