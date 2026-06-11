@@ -161,6 +161,13 @@ identical to the original.** `editor/test_roundtrip.py` and the model sweep in
 
 ## 📝 Changelog
 
+**v1.9.0**
+- **Export / Import** — transfer mechs, pilots, inventory, C-Bills and faction
+  standings *between saves*. Use **Export…** to write a portable `.mw5export`
+  file from one save, then **Import…** to add it all into another (e.g. moving a
+  career-mode lineup into a fresh campaign). Imported mechs/pilots get fresh IDs
+  so they coexist with what's already there.
+
 **v1.8.0**
 - **Rare / DLC weapons & gear** now appear in the dropdowns. When a save loads,
   the editor harvests every weapon/equipment/ammo your save references (from

@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.9.0
+- Export / Import: transfer mechs, pilots, inventory, C-Bills and faction standings between
+  saves. "Export..." writes a portable .mw5export file; "Import..." adds it all into another
+  loaded save (e.g. moving a career lineup into a fresh campaign). Imported mechs/pilots get
+  fresh IDs so they coexist with what's already there.
+
 ## v1.8.0
 - Rare / DLC weapons and gear now appear in the dropdowns. On load, the editor harvests
   every weapon/equipment/ammo your save references (markets, missions, enemy mechs, your

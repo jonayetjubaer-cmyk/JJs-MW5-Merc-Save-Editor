@@ -18,7 +18,9 @@ appending their captured footer, so sizes resync but layout is exact.
 """
 from __future__ import annotations
 
+import base64
 import copy
+import json
 import struct
 import uuid
 from dataclasses import dataclass, field
@@ -1170,6 +1172,112 @@ class SaveFile:
         p = _path(self.model("InventoryModel").plist, "AvailableCBills", "Value")
         if p is not None:
             _set_leaf(p, struct.pack("<q", value))
+
+    # -- export / import (transfer between saves) --------------------------
+    def _sample_owner_payload(self) -> bytes | None:
+        """An existing mech wrapper's 'Owner' ObjectProperty payload (a ref to
+        this save's persistent model). Used to fix imported mechs' Owner refs."""
+        for el in self._wrappers_array().elements:
+            owner = el.get("Owner")
+            if owner is not None and owner.raw_payload:
+                return owner.raw_payload
+        return None
+
+    def export_to(self, path: str, *, mechs=True, pilots=True, inventory=True,
+                  cbills=True, factions=True) -> dict:
+        """Write selected content to a portable .mw5export file (JSON + base64
+        element blobs) that import_from() can add into another save."""
+        data = {"format": "mw5export", "version": 1}
+        if mechs:
+            out = []
+            for m in self.mechs():
+                w = Writer()
+                write_property_list(w, m.element)
+                out.append({"chassis": m.chassis,
+                            "blob": base64.b64encode(w.bytes()).decode("ascii")})
+            data["mechs"] = out
+        if pilots:
+            out = []
+            for p in self.pilots():
+                w = Writer()
+                write_property_list(w, p.element)
+                out.append({"callsign": p.callsign,
+                            "blob": base64.b64encode(w.bytes()).decode("ascii")})
+            data["pilots"] = out
+        if inventory:
+            data["weapons"] = [[i.asset_name, i.asset_type, i.count] for i in self.weapon_inventory()]
+            data["equipment"] = [[i.asset_name, i.asset_type, i.count] for i in self.equipment_inventory()]
+        if cbills:
+            data["cbills"] = self.cbills
+        if factions:
+            data["reputation"] = self.reputation
+            data["factions"] = {f.name: f.standing for f in self.factions()}
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+        return {"mechs": len(data.get("mechs", [])), "pilots": len(data.get("pilots", [])),
+                "weapons": len(data.get("weapons", [])), "equipment": len(data.get("equipment", []))}
+
+    def import_from(self, path: str, *, mechs=True, pilots=True, inventory=True,
+                    cbills=True, factions=True) -> dict:
+        """Add content from a .mw5export file into THIS save. Mechs/pilots get
+        fresh GUIDs (and mechs a fixed Owner ref + a storage slot), so they
+        coexist with whatever's already here."""
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        if data.get("format") != "mw5export":
+            raise ValueError("Not a MW5 export file.")
+        summary = {"mechs": 0, "pilots": 0, "items": 0}
+
+        if mechs and data.get("mechs"):
+            wrappers = self._wrappers_array()
+            storage = self._storage_array()
+            owner_payload = self._sample_owner_payload()
+            for entry in data["mechs"]:
+                el = read_property_list(Reader(base64.b64decode(entry["blob"])))
+                new_guid = uuid.uuid4().bytes
+                m = self._mech_from_element(el)
+                m.guid = new_guid
+                owner = el.get("Owner")
+                if owner is not None and owner_payload is not None:
+                    _set_leaf(owner, owner_payload)
+                m.flush()
+                wrappers.elements.append(el)
+                wrappers.count += 1
+                slot = copy.deepcopy(storage.elements[0])
+                slot.get("Value").raw_payload = new_guid
+                storage.elements.append(slot)
+                storage.count += 1
+                summary["mechs"] += 1
+
+        if pilots and data.get("pilots"):
+            roster = self.model("RosterModel").plist.get("PilotRoster").decoded
+            for entry in data["pilots"]:
+                el = read_property_list(Reader(base64.b64decode(entry["blob"])))
+                Pilot(el).persona_id = uuid.uuid4().bytes
+                roster.elements.append(el)
+                roster.count += 1
+                summary["pilots"] += 1
+
+        if inventory:
+            for name, atype, count in data.get("weapons", []):
+                self.add_item("weapon", atype, name, count)
+                summary["items"] += 1
+            for name, atype, count in data.get("equipment", []):
+                self.add_item("equipment", atype, name, count)
+                summary["items"] += 1
+
+        if cbills and "cbills" in data:
+            self.cbills = data["cbills"]
+
+        if factions:
+            if "reputation" in data:
+                self.reputation = data["reputation"]
+            fmap = {f.name: f for f in self.factions()}
+            for name, standing in data.get("factions", {}).items():
+                if name in fmap:
+                    fmap[name].standing = standing
+
+        return summary
 
     # -- save --------------------------------------------------------------
     def to_bytes(self) -> bytes:

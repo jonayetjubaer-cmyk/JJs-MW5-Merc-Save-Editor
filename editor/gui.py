@@ -40,7 +40,7 @@ from savefile import weapon_class, ARMOR_PARTS, REAR_PARTS
 HARDPOINT_LABEL = {"EH": "Energy", "BH": "Ballistic", "MH": "Missile", "Melee": "Melee"}
 
 
-APP_VERSION = "1.8.0"
+APP_VERSION = "1.9.0"
 
 DEFAULT_SAVE_DIR = os.path.expandvars(
     r"%LOCALAPPDATA%\MW5Mercs\Saved\SaveGames"
@@ -102,6 +102,9 @@ class EditorApp(tk.Tk):
         ttk.Button(bar, text="Open…", command=self.on_open).pack(side="left")
         ttk.Button(bar, text="Save", command=self.on_save).pack(side="left", padx=4)
         ttk.Button(bar, text="Save As…", command=self.on_save_as).pack(side="left")
+        ttk.Separator(bar, orient="vertical").pack(side="left", fill="y", padx=8)
+        ttk.Button(bar, text="Export…", command=self.on_export).pack(side="left")
+        ttk.Button(bar, text="Import…", command=self.on_import).pack(side="left", padx=4)
 
     # -- mech tab ----------------------------------------------------------
     def _build_mech_tab(self):
@@ -392,6 +395,64 @@ class EditorApp(tk.Tk):
             messagebox.showinfo("Saved", f"Wrote {os.path.basename(path)} successfully.")
         except Exception as e:
             self._error("Failed to save", e)
+
+    # -- export / import ---------------------------------------------------
+    def on_export(self):
+        if not self._guard():
+            return
+        cats = CategoryDialog(
+            self, "Export to file",
+            "Choose what to export to a portable .mw5export file\n"
+            "(you can import it into another save later):").result
+        if cats is None:
+            return
+        path = filedialog.asksaveasfilename(
+            title="Export to…", defaultextension=".mw5export",
+            initialfile="my-mechs.mw5export",
+            filetypes=[("MW5 export", "*.mw5export"), ("All files", "*.*")])
+        if not path:
+            return
+        try:
+            s = self.save.export_to(path, **cats)
+            self.status.set(f"Exported {s['mechs']} mechs, {s['pilots']} pilots, "
+                            f"{s['weapons'] + s['equipment']} items.")
+            messagebox.showinfo("Exported",
+                                f"Exported to {os.path.basename(path)}:\n\n"
+                                f"  {s['mechs']} mechs\n  {s['pilots']} pilots\n"
+                                f"  {s['weapons'] + s['equipment']} inventory items")
+        except Exception as e:
+            self._error("Export failed", e)
+
+    def on_import(self):
+        if not self._guard():
+            return
+        path = filedialog.askopenfilename(
+            title="Import from…",
+            filetypes=[("MW5 export", "*.mw5export"), ("All files", "*.*")])
+        if not path:
+            return
+        cats = CategoryDialog(
+            self, "Import into this save",
+            "Choose what to ADD from the file into the currently open save.\n"
+            "Mechs and pilots are added with fresh IDs (they don't replace\n"
+            "what's here). Save afterwards to keep the changes.").result
+        if cats is None:
+            return
+        try:
+            s = self.save.import_from(path, **cats)
+            self._refresh_mechs()
+            self._refresh_pilots()
+            self._refresh_inventory()
+            self._refresh_factions()
+            self.status.set(f"Imported {s['mechs']} mechs, {s['pilots']} pilots, "
+                            f"{s['items']} items. Remember to Save.")
+            messagebox.showinfo("Imported",
+                                f"Added from {os.path.basename(path)}:\n\n"
+                                f"  {s['mechs']} mechs\n  {s['pilots']} pilots\n"
+                                f"  {s['items']} inventory items\n\n"
+                                "Click Save to write them into your save file.")
+        except Exception as e:
+            self._error("Import failed", e)
 
     # -- mech actions ------------------------------------------------------
     def _refresh_mechs(self):
@@ -915,6 +976,29 @@ class LoadoutDialog(tk.Toplevel):
         if self.on_apply:
             self.on_apply()
         self.destroy()
+
+
+class CategoryDialog(simpledialog.Dialog):
+    """Checkboxes for what to export/import. result = dict of kwargs or None."""
+    CATS = [("mechs", "Mechs"), ("pilots", "Pilots"), ("inventory", "Inventory (weapons / equipment / ammo)"),
+            ("cbills", "C-Bills"), ("factions", "Factions + reputation")]
+
+    def __init__(self, parent, title, prompt):
+        self.prompt = prompt
+        self.result = None
+        super().__init__(parent, title)
+
+    def body(self, master):
+        ttk.Label(master, text=self.prompt, justify="left").pack(padx=10, pady=8, anchor="w")
+        self.vars = {}
+        for key, label in self.CATS:
+            v = tk.BooleanVar(value=True)
+            ttk.Checkbutton(master, text=label, variable=v).pack(padx=16, pady=1, anchor="w")
+            self.vars[key] = v
+        return None
+
+    def apply(self):
+        self.result = {k: v.get() for k, v in self.vars.items()}
 
 
 class ChoiceDialog(simpledialog.Dialog):
