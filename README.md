@@ -161,6 +161,11 @@ identical to the original.** `editor/test_roundtrip.py` and the model sweep in
 
 ## 📝 Changelog
 
+**v1.10.0**
+- Inventory quality-of-life: **filter/search box**, **click column headers to
+  sort**, **multi-select rows** (shift/ctrl-click) to set count or remove in
+  bulk, and **double-click an item** to set its count.
+
 **v1.9.0**
 - **Export / Import** — transfer mechs, pilots, inventory, C-Bills and faction
   standings *between saves*. Use **Export…** to write a portable `.mw5export`

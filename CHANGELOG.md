@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.10.0
+- Inventory quality-of-life: filter/search box, sortable columns (click a header),
+  multi-select rows (shift/ctrl-click) to set count or remove in bulk, and double-click an
+  item to set its count.
+
 ## v1.9.0
 - Export / Import: transfer mechs, pilots, inventory, C-Bills and faction standings between
   saves. "Export..." writes a portable .mw5export file; "Import..." adds it all into another

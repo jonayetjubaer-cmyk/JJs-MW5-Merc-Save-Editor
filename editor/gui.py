@@ -40,7 +40,7 @@ from savefile import weapon_class, ARMOR_PARTS, REAR_PARTS
 HARDPOINT_LABEL = {"EH": "Energy", "BH": "Ballistic", "MH": "Missile", "Melee": "Melee"}
 
 
-APP_VERSION = "1.9.0"
+APP_VERSION = "1.10.0"
 
 DEFAULT_SAVE_DIR = os.path.expandvars(
     r"%LOCALAPPDATA%\MW5Mercs\Saved\SaveGames"
@@ -223,21 +223,31 @@ class EditorApp(tk.Tk):
 
         ttk.Button(add, text="Add to Inventory", command=self.on_add_item).grid(row=0, column=6, padx=8)
 
+        # filter / search row
+        filt = ttk.Frame(self.inv_tab)
+        filt.pack(fill="x", padx=4, pady=(2, 0))
+        ttk.Label(filt, text="Filter:").pack(side="left")
+        self.inv_filter_var = tk.StringVar()
+        ttk.Entry(filt, textvariable=self.inv_filter_var, width=30).pack(side="left", padx=4)
+        self.inv_filter_var.trace_add("write", lambda *a: self._render_inventory())
+        ttk.Label(filt, text="(click a column header to sort • shift/ctrl-click rows to multi-select)",
+                  foreground="#666").pack(side="left", padx=8)
+
         # Current inventory list
         iwrap = ttk.Frame(self.inv_tab)
         iwrap.pack(fill="both", expand=True, padx=4, pady=4)
         cols = ("type", "item", "count")
-        self.inv_tree = ttk.Treeview(iwrap, columns=cols, show="headings")
-        self.inv_tree.heading("type", text="Asset Type")
-        self.inv_tree.heading("item", text="Item ID")
-        self.inv_tree.heading("count", text="Count")
-        self.inv_tree.column("type", width=180)
-        self.inv_tree.column("item", width=300)
-        self.inv_tree.column("count", width=70, anchor="center")
+        self.inv_tree = ttk.Treeview(iwrap, columns=cols, show="headings", selectmode="extended")
+        for c, txt, w in (("type", "Asset Type", 180), ("item", "Item ID", 300), ("count", "Count", 70)):
+            self.inv_tree.heading(c, text=txt, command=lambda col=c: self._sort_inventory(col))
+            self.inv_tree.column(c, width=w, anchor=("center" if c == "count" else "w"))
         isb = ttk.Scrollbar(iwrap, orient="vertical", command=self.inv_tree.yview)
         self.inv_tree.configure(yscrollcommand=isb.set)
         self.inv_tree.pack(side="left", fill="both", expand=True)
         isb.pack(side="right", fill="y")
+        self.inv_tree.bind("<Double-Button-1>", self._on_inv_double_click)
+        self._inv_all = []
+        self._inv_sort = ("item", False)   # (column, reverse)
 
         btns = ttk.Frame(self.inv_tab)
         btns.pack(fill="x", padx=4, pady=(0, 6))
@@ -706,13 +716,32 @@ class EditorApp(tk.Tk):
     # -- inventory actions -------------------------------------------------
     def _refresh_inventory(self):
         self.cbills_var.set(str(self.save.cbills))
+        rows = [(it.asset_type, it.asset_name, it.count, "weapon")
+                for it in self.save.weapon_inventory()]
+        rows += [(it.asset_type, it.asset_name, it.count, "equipment")
+                 for it in self.save.equipment_inventory()]
+        self._inv_all = rows
+        self._render_inventory()
+
+    def _render_inventory(self):
+        """Apply the current filter + sort to the master list and repaint."""
+        q = self.inv_filter_var.get().strip().lower()
+        rows = [r for r in self._inv_all if not q or q in r[0].lower() or q in r[1].lower()]
+        col, rev = self._inv_sort
+        idx = {"type": 0, "item": 1, "count": 2}[col]
+        rows.sort(key=lambda r: r[2] if col == "count" else r[idx].lower(), reverse=rev)
         self.inv_tree.delete(*self.inv_tree.get_children())
-        for it in self.save.weapon_inventory():
-            self.inv_tree.insert("", "end", values=(it.asset_type, it.asset_name, it.count),
-                                 tags=("weapon",))
-        for it in self.save.equipment_inventory():
-            self.inv_tree.insert("", "end", values=(it.asset_type, it.asset_name, it.count),
-                                 tags=("equipment",))
+        for t, name, count, inv in rows:
+            self.inv_tree.insert("", "end", values=(t, name, count), tags=(inv,))
+
+    def _sort_inventory(self, col):
+        cur_col, cur_rev = self._inv_sort
+        self._inv_sort = (col, (not cur_rev) if col == cur_col else False)
+        self._render_inventory()
+
+    def _on_inv_double_click(self, event):
+        if self.inv_tree.identify_row(event.y):
+            self.on_set_item_count()
 
     def on_set_cbills(self):
         if not self._guard():
@@ -752,42 +781,54 @@ class EditorApp(tk.Tk):
         except Exception as e:
             self._error("Failed to add item", e)
 
-    def _selected_inv_row(self):
-        sel = self.inv_tree.selection()
-        if not sel:
-            return None
-        vals = self.inv_tree.item(sel[0], "values")
-        tags = self.inv_tree.item(sel[0], "tags")
-        return {"type": vals[0], "name": vals[1], "count": vals[2],
-                "inv": tags[0] if tags else "weapon"}
+    def _selected_inv_rows(self):
+        rows = []
+        for iid in self.inv_tree.selection():
+            vals = self.inv_tree.item(iid, "values")
+            tags = self.inv_tree.item(iid, "tags")
+            rows.append({"type": vals[0], "name": vals[1], "count": vals[2],
+                         "inv": tags[0] if tags else "weapon"})
+        return rows
 
     def on_set_item_count(self):
         if not self._guard():
             return
-        row = self._selected_inv_row()
-        if row is None:
+        rows = self._selected_inv_rows()
+        if not rows:
             return self._need_selection()
-        new = simpledialog.askinteger("Set count", f"New count for {row['name']}:",
-                                      initialvalue=int(row["count"]), minvalue=0)
+        title = (f"New count for {rows[0]['name']}:" if len(rows) == 1
+                 else f"New count for the {len(rows)} selected items:")
+        new = simpledialog.askinteger("Set count", title,
+                                      initialvalue=int(rows[0]["count"]), minvalue=0)
         if new is None:
             return
-        for it in (self.save.weapon_inventory() if row["inv"] == "weapon"
-                   else self.save.equipment_inventory()):
-            if it.asset_name == row["name"]:
-                it.count = new
-                break
+        # group target names per inventory so we only scan each list once
+        want = {"weapon": set(), "equipment": set()}
+        for r in rows:
+            want[r["inv"]].add(r["name"])
+        for inv, names in want.items():
+            if not names:
+                continue
+            items = self.save.weapon_inventory() if inv == "weapon" else self.save.equipment_inventory()
+            for it in items:
+                if it.asset_name in names:
+                    it.count = new
         self._refresh_inventory()
-        self.status.set(f"Set {row['name']} count to {new}. Remember to Save.")
+        self.status.set(f"Set count to {new} for {len(rows)} item(s). Remember to Save.")
 
     def on_remove_item(self):
         if not self._guard():
             return
-        row = self._selected_inv_row()
-        if row is None:
+        rows = self._selected_inv_rows()
+        if not rows:
             return self._need_selection()
-        self.save.remove_item(row["inv"], row["name"])
+        if not messagebox.askyesno("Remove items",
+                                   f"Remove {len(rows)} selected item(s) from inventory?"):
+            return
+        for r in rows:
+            self.save.remove_item(r["inv"], r["name"])
         self._refresh_inventory()
-        self.status.set(f"Removed {row['name']}. Remember to Save.")
+        self.status.set(f"Removed {len(rows)} item(s). Remember to Save.")
 
     # -- helpers -----------------------------------------------------------
     def _guard(self):
