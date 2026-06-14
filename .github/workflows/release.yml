@@ -61,11 +61,36 @@ jobs:
           Rename-Item build_out/gui.dist MW5SaveEditor
           Compress-Archive -Path build_out/MW5SaveEditor -DestinationPath "${{ steps.ver.outputs.zip }}"
 
+      - name: Extract release notes from CHANGELOG
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $out = @()
+          $inSection = $false
+          foreach ($line in (Get-Content CHANGELOG.md)) {
+            if ($line -match '^##\s+') {
+              if ($inSection) { break }   # reached the next version's heading
+              if ($line -match ('^##\s+' + [regex]::Escape($tag) + '\b')) {
+                $inSection = $true
+                continue                  # skip the heading line itself
+              }
+            }
+            if ($inSection) { $out += $line }
+          }
+          $body = ($out -join "`n").Trim()
+          if (-not $body) { $body = "Release $tag" }
+          # pwsh utf8 is BOM-less; write the notes for the release step to read
+          Set-Content -Path release_notes.md -Value $body -Encoding utf8
+          Write-Host "----- release_notes.md -----"
+          Write-Host $body
+
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ steps.ver.outputs.zip }}
+          body_path: release_notes.md
 
       - name: Upload to Nexus Mods
         if: ${{ startsWith(github.ref, 'refs/tags/') && env.NEXUS_KEY != '' && env.NEXUS_GID != '' }}
