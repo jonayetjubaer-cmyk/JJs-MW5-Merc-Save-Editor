@@ -544,6 +544,43 @@ class Mech:
         hardpoint layout."""
         self.apply_layout(*donor._layout_bundle())
 
+    # -- traits (Cantina-installed mech quirks) ----------------------------
+    def installed_traits_av(self):
+        """The InstalledTraits ArrayValue (one element per installed mech
+        trait), or None if this mech has no InstalledTraits array yet."""
+        ld = self._loadout()
+        if ld is None or ld.decoded is None:
+            return None
+        it = ld.decoded.get("InstalledTraits")
+        if it is None or it.decoded is None or not hasattr(it.decoded, "elements"):
+            return None
+        return it.decoded
+
+    def traits(self) -> list[str]:
+        return _trait_names(self.installed_traits_av())
+
+    def ensure_installed_traits(self, wrapper_template):
+        """Return this mech's InstalledTraits ArrayValue, creating the array
+        property (cloned from `wrapper_template`) if the mech doesn't have one.
+        Owned mechs have no InstalledTraits until a trait is installed, so to
+        add the first one we graft in a real (emptied) array wrapper."""
+        ld = self._loadout()
+        if ld is None or ld.decoded is None:
+            return None
+        it = ld.decoded.get("InstalledTraits")
+        if it is None:
+            if wrapper_template is None:
+                return None
+            it = copy.deepcopy(wrapper_template)
+            it.name = "InstalledTraits"
+            if it.decoded is not None and hasattr(it.decoded, "elements"):
+                it.decoded.elements = []
+                it.decoded.count = 0
+                it.decoded.inner_tag_name = "InstalledTraits"
+                it.decoded.inner_struct_name = "MechTraitDataAssetId"
+            ld.decoded.properties.append(it)
+        return it.decoded if (it.decoded is not None and hasattr(it.decoded, "elements")) else None
+
     def flush(self):
         """Re-serialize the nested archive back into the ByteData payload."""
         w = Writer()
@@ -555,6 +592,68 @@ class Mech:
         out.write(archive_bytes)
         self._byte_data.raw_payload = out.bytes()
         self._byte_data.decoded = None
+
+
+# ---------------------------------------------------------------------------
+# Traits (pilot traits + Cantina-installed mech traits)
+# ---------------------------------------------------------------------------
+# Both kinds are stored identically: an ArrayProperty<StructProperty> where each
+# element is a single `ID` struct (PrimaryAssetType.Name + PrimaryAssetName) --
+# the exact shape used by inventory item ids. Pilot traits live on the roster
+# pilot element (PilotTraits); mech traits live in the mech loadout
+# (InstalledTraits). The only difference is the asset TYPE string.
+PILOT_TRAIT_TYPE = "MWPilotTraitDataAsset"
+MECH_TRAIT_TYPE = "MWMechTraitDataAsset"
+
+
+def _trait_element_name(el: PropertyList) -> str:
+    idp = el.get("ID")
+    if idp is None or idp.decoded is None:
+        return ""
+    nm = idp.decoded.get("PrimaryAssetName")
+    return read_fstring_payload(nm.raw_payload) if nm else ""
+
+
+def _set_trait_element(el: PropertyList, name: str, type_name: str):
+    idp = el.get("ID")
+    if idp is None or idp.decoded is None:
+        return
+    t = _path(idp.decoded, "PrimaryAssetType", "Name")
+    nm = idp.decoded.get("PrimaryAssetName")
+    if t is not None:
+        _set_leaf(t, write_fstring_payload(type_name))
+    if nm is not None:
+        _set_leaf(nm, write_fstring_payload(name))
+
+
+def _trait_names(av: ArrayValue) -> list[str]:
+    if av is None or not hasattr(av, "elements"):
+        return []
+    return [_trait_element_name(el) for el in av.elements]
+
+
+def _trait_add(av: ArrayValue, template_el: PropertyList, name: str, type_name: str) -> bool:
+    """Append a trait (cloned from `template_el`) unless it's already present."""
+    if av is None or template_el is None:
+        return False
+    if name in _trait_names(av):
+        return False
+    new_el = copy.deepcopy(template_el)
+    _set_trait_element(new_el, name, type_name)
+    av.elements.append(new_el)
+    av.count += 1
+    return True
+
+
+def _trait_remove(av: ArrayValue, name: str) -> bool:
+    if av is None:
+        return False
+    for i, el in enumerate(av.elements):
+        if _trait_element_name(el) == name:
+            del av.elements[i]
+            av.count -= 1
+            return True
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -674,6 +773,17 @@ class Pilot:
         p = _path(self.persona.decoded, "PersonaId", "Value")
         if p is not None:
             p.raw_payload = value
+
+    # -- traits ------------------------------------------------------------
+    def traits_av(self):
+        """The PilotTraits ArrayValue (present even when empty), or None."""
+        pt = self.element.get("PilotTraits")
+        if pt is None or pt.decoded is None or not hasattr(pt.decoded, "elements"):
+            return None
+        return pt.decoded
+
+    def traits(self) -> list[str]:
+        return _trait_names(self.traits_av())
 
 
 # ---------------------------------------------------------------------------
@@ -1094,6 +1204,143 @@ class SaveFile:
                 del roster.elements[i]
                 roster.count -= 1
                 break
+
+    # -- traits ------------------------------------------------------------
+    def _find_array_prop(self, names: set[str], need_elements: bool):
+        """Find the first decoded ArrayProperty whose name is in `names`
+        (optionally requiring >=1 element), scanning all models then owned
+        mechs. Used to harvest real trait-array structures to clone from."""
+        found = [None]
+
+        def scan(pl, depth=0):
+            if found[0] is not None or pl is None or depth > 60 or not hasattr(pl, "properties"):
+                return
+            for p in pl.properties:
+                if p.name in names and p.decoded is not None and hasattr(p.decoded, "elements"):
+                    if not need_elements or p.decoded.elements:
+                        found[0] = p
+                        return
+                d = p.decoded
+                if d is not None and hasattr(d, "properties"):
+                    scan(d, depth + 1)
+                if d is not None and hasattr(d, "elements") \
+                        and getattr(d, "element_type", None) == "StructProperty":
+                    for el in d.elements:
+                        if hasattr(el, "properties"):
+                            scan(el, depth + 1)
+
+        for name in [pp.name for pp in self.model_list.properties]:
+            try:
+                scan(self.model(name).plist)
+            except Exception:
+                pass
+            if found[0] is not None:
+                return found[0]
+        for m in self.mechs():
+            scan(m.nested)
+            if found[0] is not None:
+                return found[0]
+        return found[0]
+
+    def _trait_element_template(self):
+        """A deep-copyable trait element (a PropertyList with one `ID` struct).
+        Pilot and mech trait elements share this shape, so any one works."""
+        if getattr(self, "_trait_el_tmpl", "_") == "_":
+            p = self._find_array_prop({"PilotTraits", "InstalledTraits"}, True)
+            self._trait_el_tmpl = copy.deepcopy(p.decoded.elements[0]) if p else None
+        return self._trait_el_tmpl
+
+    def _installed_traits_wrapper(self):
+        """A deep-copyable InstalledTraits array-property wrapper, for grafting
+        onto an owned mech that has none. Prefer a real (possibly empty)
+        InstalledTraits from a post-mission record; fall back to a PilotTraits
+        wrapper (same StructProperty-array framing, relabelled on graft)."""
+        if getattr(self, "_it_wrap_tmpl", "_") == "_":
+            p = (self._find_array_prop({"InstalledTraits"}, False)
+                 or self._find_array_prop({"PilotTraits"}, False))
+            self._it_wrap_tmpl = copy.deepcopy(p) if p else None
+        return self._it_wrap_tmpl
+
+    def referenced_traits(self) -> dict:
+        """Every pilot/mech trait the save references (the player's pilots, all
+        NPC/market personas, mech records...). Gives the editor a dropdown of
+        guaranteed-valid trait asset names the save has actually seen:
+
+            {"pilot": [name, ...], "mech": [name, ...]}
+        """
+        out = {"pilot": set(), "mech": set()}
+
+        def scan(pl, depth=0):
+            if depth > 60 or pl is None or not hasattr(pl, "properties"):
+                return
+            for p in pl.properties:
+                if p.name == "ID" and p.decoded is not None:
+                    pat = p.decoded.get("PrimaryAssetType")
+                    nam = p.decoded.get("PrimaryAssetName")
+                    if pat is not None and nam is not None and pat.decoded is not None:
+                        tn = pat.decoded.get("Name")
+                        if tn is not None:
+                            t = read_fstring_payload(tn.raw_payload)
+                            n = read_fstring_payload(nam.raw_payload)
+                            if n and n != "None":
+                                if t == PILOT_TRAIT_TYPE:
+                                    out["pilot"].add(n)
+                                elif t == MECH_TRAIT_TYPE:
+                                    out["mech"].add(n)
+                if p.decoded is not None and hasattr(p.decoded, "properties"):
+                    scan(p.decoded, depth + 1)
+                if p.decoded is not None and hasattr(p.decoded, "elements") \
+                        and getattr(p.decoded, "element_type", None) == "StructProperty":
+                    for el in p.decoded.elements:
+                        if hasattr(el, "properties"):
+                            scan(el, depth + 1)
+
+        for name in [pp.name for pp in self.model_list.properties]:
+            try:
+                scan(self.model(name).plist)
+            except Exception:
+                pass
+        for m in self.mechs():
+            scan(m.nested)
+        return {k: sorted(v) for k, v in out.items()}
+
+    def add_pilot_trait(self, pilot: "Pilot", name: str,
+                        type_name: str = PILOT_TRAIT_TYPE) -> bool:
+        """Add a trait to a pilot (no-op if already present). Returns True if
+        added. Raises if the save has no trait element anywhere to clone."""
+        av = pilot.traits_av()
+        if av is None:
+            raise RuntimeError("This pilot has no PilotTraits array to add to.")
+        tmpl = self._trait_element_template()
+        if tmpl is None:
+            raise RuntimeError("No trait in this save to use as a template.")
+        return _trait_add(av, tmpl, name, type_name)
+
+    def remove_pilot_trait(self, pilot: "Pilot", name: str) -> bool:
+        return _trait_remove(pilot.traits_av(), name)
+
+    def add_mech_trait(self, mech: "Mech", name: str,
+                       type_name: str = MECH_TRAIT_TYPE, flush: bool = True) -> bool:
+        """Best-effort: install a (Cantina-style) trait on a mech. Grafts an
+        InstalledTraits array if the mech has none. Experimental -- mech traits
+        couldn't be verified in-game; pass flush=False when an outer caller
+        (the loadout dialog) flushes the nested archive itself."""
+        av = mech.ensure_installed_traits(self._installed_traits_wrapper())
+        if av is None:
+            raise RuntimeError("Couldn't create an InstalledTraits array on this mech.")
+        tmpl = self._trait_element_template()
+        if tmpl is None:
+            raise RuntimeError("No trait in this save to use as a template.")
+        ok = _trait_add(av, tmpl, name, type_name)
+        if ok and flush:
+            mech.flush()
+        return ok
+
+    def remove_mech_trait(self, mech: "Mech", name: str, flush: bool = True) -> bool:
+        ok = _trait_remove(mech.installed_traits_av(), name)
+        if ok and flush:
+            mech.flush()
+        return ok
 
     # -- inventory ---------------------------------------------------------
     def _inventory_array(self, which: str) -> ArrayValue:
