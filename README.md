@@ -161,6 +161,15 @@ identical to the original.** `editor/test_roundtrip.py` and the model sweep in
 
 ## 📝 Changelog
 
+**v1.11.0**
+- **Pilot traits** are now editable! The Pilots tab has a **Traits** panel — add a
+  trait from a dropdown of every trait your save has encountered (or type an asset
+  name), or remove one. No more save-scumming to roll the traits you want.
+- **Mech traits (experimental).** The **Edit Loadout** dialog can add/remove
+  Cantina-style mech quirks (e.g. *Faster Cooling*). This is best-effort and
+  **untested in-game** — it's clearly labelled experimental in the app, so back up
+  your save before relying on it.
+
 **v1.10.0**
 - Inventory quality-of-life: **filter/search box**, **click column headers to
   sort**, **multi-select rows** (shift/ctrl-click) to set count or remove in
