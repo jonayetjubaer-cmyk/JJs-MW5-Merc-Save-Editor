@@ -40,7 +40,7 @@ from savefile import weapon_class, ARMOR_PARTS, REAR_PARTS
 HARDPOINT_LABEL = {"EH": "Energy", "BH": "Ballistic", "MH": "Missile", "Melee": "Melee"}
 
 
-APP_VERSION = "1.10.0"
+APP_VERSION = "1.11.0"
 
 DEFAULT_SAVE_DIR = os.path.expandvars(
     r"%LOCALAPPDATA%\MW5Mercs\Saved\SaveGames"
@@ -58,6 +58,8 @@ class EditorApp(tk.Tk):
         self.path: str | None = None
         # item catalog (static defaults; merged with save-referenced items on load)
         self.cat = {"weapon": list(WEAPONS), "equipment": list(EQUIPMENT), "ammo": list(AMMO)}
+        # trait catalog (names the loaded save references; filled on open)
+        self.traitcat = {"pilot": [], "mech": []}
 
         self._build_toolbar()
 
@@ -185,6 +187,25 @@ class EditorApp(tk.Tk):
             row=br, column=0, columnspan=2, sticky="w", pady=8)
         ttk.Button(form, text="Max caps (10)", command=self.on_max_caps).grid(
             row=br, column=2, sticky="w", pady=8)
+
+        # -- traits (apply immediately; no "Apply to Pilot" needed) --
+        tr = br + 1
+        ttk.Separator(form, orient="horizontal").grid(row=tr, column=0, columnspan=3, sticky="ew", pady=6)
+        ttk.Label(form, text="Traits", font=("", 9, "bold")).grid(row=tr + 1, column=0, sticky="w")
+        tlf = ttk.Frame(form)
+        tlf.grid(row=tr + 2, column=0, columnspan=3, sticky="w")
+        self.pilot_trait_list = tk.Listbox(tlf, height=4, width=38, exportselection=False)
+        self.pilot_trait_list.pack(side="left", fill="y")
+        ptsb = ttk.Scrollbar(tlf, command=self.pilot_trait_list.yview)
+        self.pilot_trait_list.configure(yscrollcommand=ptsb.set)
+        ptsb.pack(side="left", fill="y")
+        taf = ttk.Frame(form)
+        taf.grid(row=tr + 3, column=0, columnspan=3, sticky="w", pady=4)
+        self.pilot_trait_var = tk.StringVar()
+        self.pilot_trait_cb = ttk.Combobox(taf, textvariable=self.pilot_trait_var, width=32)
+        self.pilot_trait_cb.pack(side="left")
+        ttk.Button(taf, text="Add", command=self.on_add_pilot_trait).pack(side="left", padx=4)
+        ttk.Button(taf, text="Remove", command=self.on_remove_pilot_trait).pack(side="left")
 
     # -- inventory tab -----------------------------------------------------
     def _build_inventory_tab(self):
@@ -354,6 +375,10 @@ class EditorApp(tk.Tk):
                 seen[n] = t   # save-referenced overrides any guessed type
             cat[key] = sorted(seen.items())
         self.cat = cat
+        try:
+            self.traitcat = self.save.referenced_traits()
+        except Exception:
+            self.traitcat = {"pilot": [], "mech": []}
 
     # -- file ops ----------------------------------------------------------
     def on_open(self):
@@ -520,7 +545,9 @@ class EditorApp(tk.Tk):
             if not self._apply_layout_dialog(mech, idx, empty=True):
                 return
             mech = self.save.mechs()[idx]   # re-read with the new hardpoints
-        LoadoutDialog(self, mech, catalog=self.cat, on_apply=lambda: (self._refresh_mechs(),
+        LoadoutDialog(self, mech, catalog=self.cat, save=self.save,
+                      trait_names=self.traitcat.get("mech", []),
+                      on_apply=lambda: (self._refresh_mechs(),
                       self.status.set(f"Loadout updated for mech #{idx}. Remember to Save.")))
 
     def on_set_hardpoints(self):
@@ -639,6 +666,51 @@ class EditorApp(tk.Tk):
         for sk in SKILLS:
             self.pilot_vars[f"skill_{sk}"].set(str(p.skill(sk)))
             self.pilot_vars[f"cap_{sk}"].set(str(p.skill_cap(sk)))
+        self._refresh_pilot_traits(p)
+
+    def _refresh_pilot_traits(self, pilot=None):
+        if pilot is None:
+            idx = self._selected_pilot_index()
+            pilot = self.save.pilots()[idx] if (self.save and idx is not None) else None
+        self.pilot_trait_list.delete(0, "end")
+        if pilot:
+            for t in pilot.traits():
+                self.pilot_trait_list.insert("end", t)
+        self.pilot_trait_cb["values"] = self.traitcat.get("pilot", [])
+
+    def on_add_pilot_trait(self):
+        if not self._guard():
+            return
+        idx = self._selected_pilot_index()
+        if idx is None:
+            return self._need_selection()
+        name = self.pilot_trait_var.get().strip()
+        if not name:
+            return messagebox.showinfo("Pick trait", "Choose or type a pilot trait asset name.")
+        p = self.save.pilots()[idx]
+        try:
+            if self.save.add_pilot_trait(p, name):
+                self._refresh_pilot_traits(p)
+                self.status.set(f"Added trait '{name}' to {p.callsign}. Remember to Save.")
+            else:
+                self.status.set(f"{p.callsign} already has '{name}'.")
+        except Exception as e:
+            self._error("Failed to add trait", e)
+
+    def on_remove_pilot_trait(self):
+        if not self._guard():
+            return
+        idx = self._selected_pilot_index()
+        if idx is None:
+            return self._need_selection()
+        sel = self.pilot_trait_list.curselection()
+        if not sel:
+            return self._need_selection()
+        name = self.pilot_trait_list.get(sel[0])
+        p = self.save.pilots()[idx]
+        if self.save.remove_pilot_trait(p, name):
+            self._refresh_pilot_traits(p)
+            self.status.set(f"Removed trait '{name}' from {p.callsign}. Remember to Save.")
 
     def on_apply_pilot(self):
         if not self._guard():
@@ -850,10 +922,13 @@ class LoadoutDialog(tk.Toplevel):
     """Full per-mech loadout editor: weapons (per hardpoint, class-filtered),
     fire groups, and armor."""
 
-    def __init__(self, parent, mech, on_apply=None, catalog=None):
+    def __init__(self, parent, mech, on_apply=None, catalog=None,
+                 save=None, trait_names=None):
         super().__init__(parent)
         self.mech = mech
         self.on_apply = on_apply
+        self.save = save
+        self.trait_names = trait_names or []
         self.title(f"Edit Loadout — {mech_display(mech.chassis)}")
         self.geometry("760x620")
         self.transient(parent)
@@ -971,11 +1046,62 @@ class LoadoutDialog(tk.Toplevel):
             self.armor_vars[loc] = v
         ttk.Button(self, text="Max armor (= installed)", command=self._max_armor).pack(anchor="w", padx=10, pady=2)
 
+        # traits (Cantina-style mech quirks) -- experimental
+        if self.save is not None:
+            ttk.Separator(self, orient="horizontal").pack(fill="x", padx=10, pady=8)
+            ttk.Label(self, text="Mech Traits (experimental)",
+                      font=("", 10, "bold")).pack(anchor="w", padx=10)
+            ttk.Label(self, text="Cantina-style quirks (e.g. Faster Cooling). Untested in-game — "
+                      "back up your save before relying on these.",
+                      foreground="#a00", wraplength=720, justify="left").pack(anchor="w", padx=10)
+            tfrm = ttk.Frame(self)
+            tfrm.pack(fill="x", padx=10, pady=4)
+            self.mtrait_list = tk.Listbox(tfrm, height=3, width=40, exportselection=False)
+            self.mtrait_list.pack(side="left", fill="y")
+            mtsb = ttk.Scrollbar(tfrm, command=self.mtrait_list.yview)
+            self.mtrait_list.configure(yscrollcommand=mtsb.set)
+            mtsb.pack(side="left", fill="y")
+            actf = ttk.Frame(tfrm)
+            actf.pack(side="left", fill="x", padx=8)
+            self.mtrait_var = tk.StringVar()
+            ttk.Combobox(actf, textvariable=self.mtrait_var, values=self.trait_names,
+                         width=34).pack(anchor="w")
+            bf = ttk.Frame(actf)
+            bf.pack(anchor="w", pady=4)
+            ttk.Button(bf, text="Add", command=self._add_trait).pack(side="left")
+            ttk.Button(bf, text="Remove", command=self._remove_trait).pack(side="left", padx=4)
+            self._refresh_traits()
+
         # buttons
         btns = ttk.Frame(self)
         btns.pack(fill="x", padx=10, pady=10)
         ttk.Button(btns, text="Apply", command=self._apply).pack(side="right")
         ttk.Button(btns, text="Cancel", command=self.destroy).pack(side="right", padx=6)
+
+    def _refresh_traits(self):
+        self.mtrait_list.delete(0, "end")
+        for t in self.mech.traits():
+            self.mtrait_list.insert("end", t)
+
+    def _add_trait(self):
+        name = self.mtrait_var.get().strip()
+        if not name:
+            return messagebox.showinfo("Pick trait", "Choose or type a mech trait asset name.")
+        try:
+            if self.save.add_mech_trait(self.mech, name, flush=False):
+                self._refresh_traits()
+            else:
+                messagebox.showinfo("Already installed", f"This mech already has '{name}'.")
+        except Exception as e:
+            messagebox.showerror("Failed to add trait", f"{type(e).__name__}: {e}")
+
+    def _remove_trait(self):
+        sel = self.mtrait_list.curselection()
+        if not sel:
+            return messagebox.showinfo("Select first", "Select a trait to remove.")
+        name = self.mtrait_list.get(sel[0])
+        if self.save.remove_mech_trait(self.mech, name, flush=False):
+            self._refresh_traits()
 
     def _max_armor(self):
         for loc in ARMOR_PARTS + REAR_PARTS:

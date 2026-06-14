@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.11.0
+- **Pilot traits** are now editable. The Pilots tab has a Traits panel: add a trait from a
+  dropdown of every trait your save has encountered (or type an asset name), or remove one.
+  Great for skipping the save-scum hunt for the traits you want.
+- **Mech traits (experimental).** The Edit Loadout dialog can add/remove Cantina-style mech
+  quirks (e.g. Faster Cooling). This is best-effort and **untested in-game** — it's clearly
+  labelled in the app. Back up your save before relying on it.
+
 ## v1.10.0
 - Inventory quality-of-life: filter/search box, sortable columns (click a header),
   multi-select rows (shift/ctrl-click) to set count or remove in bulk, and double-click an
