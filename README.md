@@ -72,19 +72,38 @@ This tool edits your save files directly. **Always keep a backup** before editin
 ## 🛡️ "Windows protected your PC" / antivirus / "malware" flag
 
 Because this is a small indie tool that isn't code-signed (signing costs money),
-Windows SmartScreen or your antivirus may warn you the first time you run it.
-This is normal for tools like this — it does **not** mean there's anything wrong.
-To run it: click **More info → Run anyway**.
+Windows SmartScreen or your antivirus may warn you the first time you run it,
+especially right after a new release. This is normal for tools like this and does
+**not** mean there's anything wrong. To run it: click **More info**, then **Run anyway**.
 
-**About "malware" detections (e.g. `W32.Malware.*`) — this is a false positive.**
-The app is built with [PyInstaller](https://pyinstaller.org/), which wraps Python
-apps in a small self-extracting launcher. That launcher's behaviour trips some
-antivirus engines' *heuristics*, so they flag the **launcher**, not this code —
-a well-documented PyInstaller issue affecting many legitimate tools. Windows
-Defender reports it clean, and the full source is right here in this repo so you
-can verify exactly what it does. If your scanner is strict, use the
-**`-folder` (one-folder) download**, which doesn't self-extract and generally
-isn't flagged.
+**About virus detections like `Trojan:Script/Wacatac.B!ml` (or `W32.Malware.*`): these are
+false positives.** The app is compiled with [Nuitka](https://nuitka.net/) into a native
+binary, and every release is built in the open by GitHub Actions, so you can see exactly
+what goes into it. A detection ending in `!ml` comes from a scanner's machine-learning
+heuristic rather than a real signature match. New, unsigned, low-prevalence executables
+set these heuristics off until they build up reputation, and `Wacatac.B!ml` is one of the
+most commonly reported false positives against legitimate indie software.
+
+To be sure and carry on:
+
+- **Verify your download.** A genuine copy matches the SHA-256 hashes published for that
+  release. For **v1.11.2**:
+  - zip: `21E283FC6B0D4FC02E073EEFF358A9C54FB1EB2140147CE6E0EEE231F115D1FF`
+  - `MW5SaveEditor.exe`: `214D469647636BC74749DCDEB57C6912D296C7CDE6325B7D96D5FD73375D96EE`
+
+  If your hash matches, it's the real release. If it doesn't, delete it and re-download
+  from the official [Releases page](../../releases/latest) or Nexus, not a mirror.
+- **Second-opinion scan.** Upload the file to [VirusTotal](https://www.virustotal.com/).
+  A few heuristic engines flagging it while the rest come back clean is what a false
+  positive looks like.
+- **Allow it** in Windows Security under Virus & threat protection → Protection history →
+  Allow / Restore, or add a folder exclusion.
+
+> Maintainer note: report flagged builds to the
+> [Microsoft false-positive portal](https://www.microsoft.com/en-us/wdsi/filesubmission) so
+> Defender pushes a cloud correction for all users. The hashes above are per-release, so
+> refresh them each version. Proper code signing is the durable fix; [SignPath](https://signpath.io/)
+> offers free certificates for open-source projects.
 
 ---
 
@@ -122,15 +141,25 @@ there are no dependencies to run it from source:
 python editor/gui.py
 ```
 
-To rebuild the standalone EXE (requires [PyInstaller](https://pyinstaller.org/)):
+To rebuild the standalone EXE, install [Nuitka](https://nuitka.net/) (it will offer to
+download a C compiler on first run):
 
 ```bash
-pip install pyinstaller pillow
-python -m PyInstaller --noconfirm --onefile --windowed --name "MW5SaveEditor" ^
-  --icon editor/app_icon.ico ^
-  --add-data "editor/app_icon.ico;." --add-data "editor/app_icon.png;." ^
+pip install nuitka
+python -m nuitka --standalone --enable-plugin=tk-inter \
+  --windows-console-mode=disable \
+  --windows-icon-from-ico=editor/app_icon.ico \
+  --include-data-files=editor/app_icon.ico=app_icon.ico \
+  --include-data-files=editor/app_icon.png=app_icon.png \
+  --assume-yes-for-downloads \
+  --output-dir=build_out --output-filename=MW5SaveEditor.exe \
   editor/gui.py
 ```
+
+This produces a `MW5SaveEditor` folder; run `MW5SaveEditor.exe` inside it. The released
+builds are produced exactly this way by `.github/workflows/release.yml`. The project moved
+from PyInstaller to Nuitka because PyInstaller's self-extracting launcher tripped more
+antivirus false positives.
 
 ### Project layout
 
