@@ -3,7 +3,7 @@
 Sources, in order of trust:
   1. Items harvested from real save references (guaranteed-valid type+name).
   2. The game's full asset list, cross-referenced from a UnifiedDataCache dump
-     contributed in GitHub issue #2 (game-derived PrimaryAssetId names + their
+     contributed by FiendishDrWu in GitHub issue #2 (game-derived PrimaryAssetId names + their
      DataAsset types). These are factual game asset identifiers.
   3. Ammo / cooling / mobility from the community yaml-docs dataset and a curated
      set of confident base weapon names following confirmed conventions.

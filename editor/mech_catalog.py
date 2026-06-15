@@ -2,7 +2,7 @@
 
 Asset names follow `<VARIANT>_MDA` (confirmed from save data). Originally sourced
 from the Sarna roster, then filtered against the game's real asset list (the
-UnifiedDataCache + per-DLC tables contributed in GitHub issue #2) so every entry
+UnifiedDataCache + per-DLC tables contributed by FiendishDrWu in GitHub issue #2) so every entry
 is a chassis the game can actually spawn. Tabletop-only variants that MW5 Mercs
 does not ship were removed -- adding one used to write a mech the game silently
 dropped on load. The game still ignores assets from DLC you do not own.

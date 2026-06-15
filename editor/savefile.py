@@ -171,7 +171,7 @@ NONE_ASSET = "None"
 # SaveStateModel.MechLoadoutWrappers array and all carry a MarketItemMech, so a
 # wrapper must NOT be treated as an owned/active mech just because it has one.
 # Active-bay mechs have no MechLoadoutType (or an active value); these two are
-# the ones to exclude from the owned list. (Format facts from GitHub issue #2.)
+# the ones to exclude from the owned list. (Format facts from FiendishDrWu, issue #2.)
 MARKET_LOADOUT_TYPE = "EMechLoadoutType::MarketLoadout"
 COLD_STORAGE_LOADOUT_TYPE = "EMechLoadoutType::ColdStorageLoadout"
 NON_OWNED_LOADOUT_TYPES = (MARKET_LOADOUT_TYPE, COLD_STORAGE_LOADOUT_TYPE)

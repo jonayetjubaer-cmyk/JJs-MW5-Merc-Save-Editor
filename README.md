@@ -159,20 +159,29 @@ The golden rule of this codebase: **a no-op save must stay byte-for-byte
 identical to the original.** `editor/test_roundtrip.py` and the model sweep in
 `notes/format_notes.md` are how that's validated — please keep it lossless.
 
+## 🙏 Acknowledgments
+
+- **FiendishDrWu** — contributed the game's full asset list and clean-room save-format
+  notes (cold storage, campaign date, DLC tables) in [issue #2](../../issues/2), which
+  drove the expanded catalogs and the Add Mech cleanup.
+- **DallasSukerkin** — reported the Add Mech and AMS issues fixed in v1.11.2.
+- Everyone on Nexus and GitHub who has filed reports and suggestions.
+
 ## 📝 Changelog
 
 **v1.11.2**
 - **Much bigger item lists** — the weapon/equipment/ammo catalogs now cover the
   game's full asset list (weapons go from ~70 to **712**, every tier variant),
   so far more gear is selectable in the Inventory and Loadout pickers without
-  having to encounter it first. (Asset data contributed via issue #2 — thank you!)
+  having to encounter it first. (Asset data contributed by **FiendishDrWu** in
+  issue #2 — thank you!)
 - **Fix: Add Mech** now only lists chassis the game actually has. The picker used
   to include 74 tabletop-only variants that aren't in MW5; adding one wrote a mech
   the game silently dropped on load (it "didn't appear"). Those are removed, and a
   mis-cased Kintaro (KTO-19b) is fixed. A mech that still won't appear is from a
-  DLC you don't own.
+  DLC you don't own. (Reported by **DallasSukerkin**.)
 - **Fix: AMS** (Anti-Missile System) now shows up in the item lists — it's a
-  weapon-type asset, so look for it under weapons.
+  weapon-type asset, so look for it under weapons. (Reported by **DallasSukerkin**.)
 - **Fix:** mechs listed in a **market** no longer appear as your **owned** mechs.
   They share the same internal list as your bay but are now correctly filtered
   out by loadout type (cold-storage mechs too; a proper Cold Storage view is on
