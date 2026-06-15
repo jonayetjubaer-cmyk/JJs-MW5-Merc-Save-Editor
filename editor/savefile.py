@@ -165,6 +165,16 @@ ARMOR_PARTS = ["Head", "CenterTorso", "LeftTorso", "RightTorso",
 REAR_PARTS = ["CenterTorsoRear", "LeftTorsoRear", "RightTorsoRear"]
 
 NONE_ASSET = "None"
+
+# A MechLoadoutWrapper's MechLoadoutType (EnumProperty) tells active-bay mechs
+# apart from market listings and cold storage -- ALL three live in the same
+# SaveStateModel.MechLoadoutWrappers array and all carry a MarketItemMech, so a
+# wrapper must NOT be treated as an owned/active mech just because it has one.
+# Active-bay mechs have no MechLoadoutType (or an active value); these two are
+# the ones to exclude from the owned list. (Format facts from GitHub issue #2.)
+MARKET_LOADOUT_TYPE = "EMechLoadoutType::MarketLoadout"
+COLD_STORAGE_LOADOUT_TYPE = "EMechLoadoutType::ColdStorageLoadout"
+NON_OWNED_LOADOUT_TYPES = (MARKET_LOADOUT_TYPE, COLD_STORAGE_LOADOUT_TYPE)
 import re as _re
 
 
@@ -339,6 +349,21 @@ class Mech:
         p = _path(self.market_item.decoded, "Item", "ItemId", "Value")
         if p is not None:
             p.raw_payload = value
+
+    @property
+    def loadout_type(self) -> str:
+        """The wrapper's MechLoadoutType enum value, e.g.
+        'EMechLoadoutType::MarketLoadout' / '::ColdStorageLoadout'. Empty for
+        active-bay owned mechs (which carry no MechLoadoutType in the saves
+        seen so far)."""
+        p = self.nested.get("MechLoadoutType")
+        return read_fstring_payload(p.raw_payload) if p else ""
+
+    @property
+    def is_owned(self) -> bool:
+        """True for an active-bay owned mech (excludes market listings and
+        cold-storage records)."""
+        return self.loadout_type not in NON_OWNED_LOADOUT_TYPES
 
     @property
     def chassis(self) -> str:
@@ -940,7 +965,10 @@ class SaveFile:
     def _storage_array(self) -> ArrayValue:
         return self.model("MechStorageModel").plist.get("MechStorageList").decoded
 
-    def mechs(self) -> list[Mech]:
+    def _all_mechs(self) -> list[Mech]:
+        """Every MechLoadoutWrapper that holds a MarketItemMech -- active-bay
+        mechs AND market listings AND cold-storage records. Used internally for
+        whole-save scans (layouts, referenced items/traits)."""
         out = []
         for el in self._wrappers_array().elements:
             bd = el.get("ByteData")
@@ -953,6 +981,19 @@ class SaveFile:
             if nested.get("MarketItemMech") is not None:
                 out.append(Mech(el, bd, nested, footer))
         return out
+
+    def mechs(self) -> list[Mech]:
+        """The player's owned, active-bay mechs. Excludes market listings and
+        cold-storage records, which share the same array but carry a
+        MechLoadoutType marking them as not-owned (see issue #2)."""
+        return [m for m in self._all_mechs() if m.is_owned]
+
+    def cold_storage_mechs(self) -> list[Mech]:
+        """Mechs in cold storage (modern format). Active-bay mechs are excluded.
+        (Legacy InventoryModel.StoredMechInventory is a separate format, not
+        yet surfaced here.)"""
+        return [m for m in self._all_mechs()
+                if m.loadout_type == COLD_STORAGE_LOADOUT_TYPE]
 
     def chassis_layouts(self) -> dict:
         """Scan the WHOLE save (owned mechs, market listings, mission/post-
@@ -998,7 +1039,7 @@ class SaveFile:
                 scan(self.model(name).plist)
             except Exception:
                 pass
-        for m in self.mechs():
+        for m in self._all_mechs():
             scan(m.nested)
         return {ch: (v[1], v[2], v[3]) for ch, v in best.items()}
 
@@ -1015,7 +1056,8 @@ class SaveFile:
         asset id -- this is how rare/DLC gear becomes available to add: as soon as
         you've seen it in a market or mission, it shows up in the dropdowns."""
         WEAPON_T = {"MWTraceWeaponDataAsset", "MWProjectileWeaponDataAsset",
-                    "MWMissileWeaponDataAsset", "MWMeleeWeaponDataAsset"}
+                    "MWMissileWeaponDataAsset", "MWMeleeWeaponDataAsset",
+                    "MWAMSWeaponDataAsset"}
         EQUIP_T = {"MWHeatSinkDataAsset", "MWJumpJetDataAsset", "MWMASCDataAsset"}
         out = {"weapon": set(), "equipment": set(), "ammo": set()}
 
@@ -1051,7 +1093,7 @@ class SaveFile:
                 scan(self.model(name).plist)
             except Exception:
                 pass
-        for m in self.mechs():
+        for m in self._all_mechs():
             scan(m.nested)
         return {k: sorted(v) for k, v in out.items()}
 
@@ -1095,7 +1137,15 @@ class SaveFile:
         storage = self._storage_array()
         new_guid = uuid.uuid4().bytes
         status = "approx"
+
+        # Default donor must be an ACTIVE-bay mech: cloning a market listing or
+        # cold-storage record would carry its MechLoadoutType and the new mech
+        # wouldn't show up as owned. Fall back to donor_index if none classify.
         src_index = donor_index
+        for i, el in enumerate(wrappers.elements):
+            if self._mech_from_element(el).is_owned:
+                src_index = i
+                break
 
         want = (chassis if chassis.endswith("_MDA") else chassis + "_MDA") if chassis else None
 
@@ -1236,7 +1286,7 @@ class SaveFile:
                 pass
             if found[0] is not None:
                 return found[0]
-        for m in self.mechs():
+        for m in self._all_mechs():
             scan(m.nested)
             if found[0] is not None:
                 return found[0]
@@ -1300,7 +1350,7 @@ class SaveFile:
                 scan(self.model(name).plist)
             except Exception:
                 pass
-        for m in self.mechs():
+        for m in self._all_mechs():
             scan(m.nested)
         return {k: sorted(v) for k, v in out.items()}
 

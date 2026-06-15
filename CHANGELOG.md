@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.11.2
+- **Much bigger item lists.** The weapon/equipment/ammo catalogs now cover the game's
+  full asset list — weapons jump from ~70 to **712** (every tier variant), plus more
+  equipment and ammo — so far more gear is selectable in the Inventory and Loadout
+  pickers up front. (Asset data contributed via GitHub issue #2 — thanks!)
+- **Fix: Add Mech only lists mechs the game actually has.** The chassis list previously
+  carried 74 tabletop-only variants that aren't in MW5; adding one wrote a mech the game
+  silently dropped on load, so it "didn't appear". Those are gone, and a mis-cased entry
+  (Kintaro KTO-19b) is corrected. If a mech you add still doesn't show, it's from a DLC
+  you don't own.
+- **Fix: AMS now appears in the item lists.** Anti-Missile System is a weapon-type asset,
+  so it now shows under weapons (and AMS you already own is picked up too).
+- **Fix: market-listing mechs no longer show up as owned mechs.** Mechs for sale in a
+  market share the same internal list as your bay; they're now correctly excluded from
+  the Mechs tab (they're identified by their loadout type). Cold-storage mechs are
+  excluded the same way (a proper Cold Storage view is planned).
+
 ## v1.11.0
 - **Pilot traits** are now editable. The Pilots tab has a Traits panel: add a trait from a
   dropdown of every trait your save has encountered (or type an asset name), or remove one.
