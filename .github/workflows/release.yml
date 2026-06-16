@@ -23,6 +23,14 @@ jobs:
       # If they're not set, the Nexus upload step is skipped (GitHub Release still runs).
       NEXUS_KEY: ${{ secrets.NEXUSMODS_API_KEY }}
       NEXUS_GID: ${{ vars.NEXUS_FILE_GROUP_ID }}
+      # Code signing via SignPath Foundation (free for OSS). Once your project is
+      # approved and the SignPath GitHub App is installed on this repo, set:
+      #   Secret   → Actions: SIGNPATH_API_TOKEN          (submitter API token)
+      #   Variables → Actions: SIGNPATH_ORGANIZATION_ID
+      #                        SIGNPATH_PROJECT_SLUG
+      #                        SIGNPATH_SIGNING_POLICY_SLUG   (e.g. release-signing)
+      # Until SIGNPATH_PROJECT_SLUG is set, the signing steps below are skipped and
+      # the build ships unsigned exactly as before.
     steps:
       - uses: actions/checkout@v4
 
@@ -55,11 +63,46 @@ jobs:
             --output-dir=build_out --output-filename=JJsaveEditor.exe `
             editor/gui.py
 
-      - name: Package folder into a zip
+      - name: Name the build folder
+        shell: pwsh
+        run: Rename-Item build_out/gui.dist JJsaveEditor
+
+      # --- Code signing (SignPath Foundation). Skipped until SIGNPATH_PROJECT_SLUG
+      #     is set, so unsigned builds keep working unchanged in the meantime. ---
+      - name: Upload unsigned exe (for signing)
+        id: upload_unsigned
+        if: ${{ vars.SIGNPATH_PROJECT_SLUG != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-jjsaveeditor
+          path: build_out/JJsaveEditor/JJsaveEditor.exe
+          if-no-files-found: error
+
+      - name: Submit signing request to SignPath
+        id: signpath
+        if: ${{ vars.SIGNPATH_PROJECT_SLUG != '' }}
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          github-artifact-id: ${{ steps.upload_unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed
+
+      - name: Swap in the signed exe
+        if: ${{ vars.SIGNPATH_PROJECT_SLUG != '' }}
         shell: pwsh
         run: |
-          Rename-Item build_out/gui.dist JJsaveEditor
-          Compress-Archive -Path build_out/JJsaveEditor -DestinationPath "${{ steps.ver.outputs.zip }}"
+          $signed = Get-ChildItem signed -Recurse -Filter JJsaveEditor.exe | Select-Object -First 1
+          if (-not $signed) { throw "SignPath returned no signed JJsaveEditor.exe" }
+          Copy-Item $signed.FullName build_out/JJsaveEditor/JJsaveEditor.exe -Force
+          Write-Host "Replaced the build exe with the SignPath-signed copy."
+
+      - name: Package folder into a zip
+        shell: pwsh
+        run: Compress-Archive -Path build_out/JJsaveEditor -DestinationPath "${{ steps.ver.outputs.zip }}"
 
       - name: Extract release notes from CHANGELOG
         if: startsWith(github.ref, 'refs/tags/')
