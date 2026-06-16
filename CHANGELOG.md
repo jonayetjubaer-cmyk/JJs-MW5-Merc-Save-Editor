@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.12.0
+- **Active Bay vs Cold Storage are now shown separately.** The Mechs tab adds a
+  **Location** column (Active Bay / Cold Storage) and a count summary at the top, so
+  you can see at a glance how many mechs are in each. Cold-storage rows are dimmed.
+  This makes it clear where your mechs actually live, including ones the game has put
+  into cold storage when your active bay is full. All the mech actions (Edit Loadout,
+  Repair, Change Chassis, Remove) work on cold-storage mechs too.
+
 ## v1.11.2
 - **Much bigger item lists.** The weapon/equipment/ammo catalogs now cover the game's
   full asset list — weapons jump from ~70 to **712** (every tier variant), plus more

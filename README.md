@@ -198,6 +198,13 @@ identical to the original.** `editor/test_roundtrip.py` and the model sweep in
 
 ## 📝 Changelog
 
+**v1.12.0**
+- **Active Bay vs Cold Storage** are now shown separately in the Mechs tab — a new
+  **Location** column plus a count summary (e.g. *Active bay: 4 · Cold storage: 9*),
+  with cold-storage mechs dimmed. Makes it clear where each mech lives, including
+  ones the game moved to cold storage because the active bay was full. All mech
+  actions work on cold-storage mechs too.
+
 **v1.11.2**
 - **Much bigger item lists** — the weapon/equipment/ammo catalogs now cover the
   game's full asset list (weapons go from ~70 to **712**, every tier variant),

@@ -40,7 +40,7 @@ from savefile import weapon_class, ARMOR_PARTS, REAR_PARTS
 HARDPOINT_LABEL = {"EH": "Energy", "BH": "Ballistic", "MH": "Missile", "Melee": "Melee"}
 
 
-APP_VERSION = "1.11.2"
+APP_VERSION = "1.12.0"
 
 DEFAULT_SAVE_DIR = os.path.expandvars(
     r"%LOCALAPPDATA%\MW5Mercs\Saved\SaveGames"
@@ -112,18 +112,28 @@ class EditorApp(tk.Tk):
     def _build_mech_tab(self):
         mwrap = ttk.Frame(self.mech_tab)
         mwrap.pack(side="left", fill="both", expand=True, padx=(0, 4), pady=4)
-        cols = ("idx", "name", "code", "guid")
-        self.mech_tree = ttk.Treeview(mwrap, columns=cols, show="headings",
+
+        self.mech_count_var = tk.StringVar(value="")
+        ttk.Label(mwrap, textvariable=self.mech_count_var).pack(anchor="w", pady=(0, 2))
+
+        tw = ttk.Frame(mwrap)
+        tw.pack(fill="both", expand=True)
+        cols = ("idx", "name", "code", "loc", "guid")
+        self.mech_tree = ttk.Treeview(tw, columns=cols, show="headings",
                                       selectmode="browse")
         self.mech_tree.heading("idx", text="#")
         self.mech_tree.heading("name", text="Mech")
         self.mech_tree.heading("code", text="Asset ID")
+        self.mech_tree.heading("loc", text="Location")
         self.mech_tree.heading("guid", text="Instance GUID")
         self.mech_tree.column("idx", width=36, anchor="center")
-        self.mech_tree.column("name", width=210)
-        self.mech_tree.column("code", width=120)
-        self.mech_tree.column("guid", width=290)
-        msb = ttk.Scrollbar(mwrap, orient="vertical", command=self.mech_tree.yview)
+        self.mech_tree.column("name", width=200)
+        self.mech_tree.column("code", width=110)
+        self.mech_tree.column("loc", width=92, anchor="center")
+        self.mech_tree.column("guid", width=250)
+        # cold-storage rows are dimmed so the split reads at a glance
+        self.mech_tree.tag_configure("cold", foreground="#6f7aa8")
+        msb = ttk.Scrollbar(tw, orient="vertical", command=self.mech_tree.yview)
         self.mech_tree.configure(yscrollcommand=msb.set)
         self.mech_tree.pack(side="left", fill="both", expand=True)
         msb.pack(side="right", fill="y")
@@ -490,16 +500,41 @@ class EditorApp(tk.Tk):
             self._error("Import failed", e)
 
     # -- mech actions ------------------------------------------------------
+    def _mech_list(self):
+        """Active-bay mechs followed by cold-storage mechs, in the same order
+        the tree shows them. Operations index into this so a selection maps to
+        the right mech regardless of which group it's in."""
+        return self.save.mechs() + self.save.cold_storage_mechs()
+
     def _refresh_mechs(self):
         self.mech_tree.delete(*self.mech_tree.get_children())
-        for i, m in enumerate(self.save.mechs()):
+        active = self.save.mechs()
+        cold = self.save.cold_storage_mechs()
+        i = 0
+        for m in active:
             self.mech_tree.insert("", "end", iid=str(i),
                                   values=(i, mech_display(m.chassis),
-                                          variant_code(m.chassis), m.guid.hex()))
+                                          variant_code(m.chassis), "Active Bay", m.guid.hex()))
+            i += 1
+        for m in cold:
+            self.mech_tree.insert("", "end", iid=str(i),
+                                  values=(i, mech_display(m.chassis),
+                                          variant_code(m.chassis), "Cold Storage", m.guid.hex()),
+                                  tags=("cold",))
+            i += 1
+        self.mech_count_var.set(
+            f"Active bay: {len(active)}    Cold storage: {len(cold)}    (total {len(active) + len(cold)})")
 
     def _selected_mech_index(self):
         sel = self.mech_tree.selection()
         return int(sel[0]) if sel else None
+
+    def _selected_mech(self):
+        idx = self._selected_mech_index()
+        if idx is None:
+            return None
+        lst = self._mech_list()
+        return lst[idx] if 0 <= idx < len(lst) else None
 
     def on_add_mech(self):
         if not self._guard():
@@ -540,11 +575,11 @@ class EditorApp(tk.Tk):
         idx = self._selected_mech_index()
         if idx is None:
             return self._need_selection()
-        mech = self.save.mechs()[idx]
+        mech = self._selected_mech()
         if not mech.weapon_slots():
             if not self._apply_layout_dialog(mech, idx, empty=True):
                 return
-            mech = self.save.mechs()[idx]   # re-read with the new hardpoints
+            mech = self._selected_mech()   # re-read with the new hardpoints
         LoadoutDialog(self, mech, catalog=self.cat, save=self.save,
                       trait_names=self.traitcat.get("mech", []),
                       on_apply=lambda: (self._refresh_mechs(),
@@ -556,7 +591,7 @@ class EditorApp(tk.Tk):
         idx = self._selected_mech_index()
         if idx is None:
             return self._need_selection()
-        mech = self.save.mechs()[idx]
+        mech = self._selected_mech()
         self._apply_layout_dialog(mech, idx, empty=False)
 
     def _apply_layout_dialog(self, mech, idx, empty) -> bool:
@@ -600,7 +635,7 @@ class EditorApp(tk.Tk):
         chassis = self._pick_chassis("Change Chassis")
         if chassis is None:
             return
-        m = self.save.mechs()[idx]
+        m = self._selected_mech()
         m.chassis = chassis
         m.flush()
         self._refresh_mechs()
@@ -610,7 +645,7 @@ class EditorApp(tk.Tk):
         idx = self._selected_mech_index()
         if idx is None:
             return self._need_selection()
-        m = self.save.mechs()[idx]
+        m = self._selected_mech()
         m.repair()
         m.flush()
         self.status.set(f"Mech #{idx} repaired to full armor. Remember to Save.")
@@ -619,7 +654,7 @@ class EditorApp(tk.Tk):
         if not self._guard():
             return
         n = 0
-        for m in self.save.mechs():
+        for m in self._mech_list():   # active bay + cold storage
             m.repair()
             m.flush()
             n += 1
@@ -630,7 +665,7 @@ class EditorApp(tk.Tk):
         idx = self._selected_mech_index()
         if idx is None:
             return self._need_selection()
-        m = self.save.mechs()[idx]
+        m = self._selected_mech()
         if not messagebox.askyesno("Remove mech",
                                    f"Remove mech #{idx} ({m.chassis})?"):
             return
