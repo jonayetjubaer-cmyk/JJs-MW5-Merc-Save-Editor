@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.12.1
+- Renamed the executable from `MW5SaveEditor.exe` to `JJsaveEditor.exe` (the folder in
+  the download is now `JJsaveEditor` too). No functional changes from v1.12.0.
+
 ## v1.12.0
 - **Active Bay vs Cold Storage are now shown separately.** The Mechs tab adds a
   **Location** column (Active Bay / Cold Storage) and a count summary at the top, so

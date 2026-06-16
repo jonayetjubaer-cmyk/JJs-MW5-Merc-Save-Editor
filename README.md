@@ -15,7 +15,7 @@
 
 **[➡️ Download the latest version from the Releases page](../../releases/latest)**
 
-Grab `MW5SaveEditor.exe`, double-click it, and you're in. No install, no Python,
+Grab `JJsaveEditor.exe`, double-click it, and you're in. No install, no Python,
 nothing else needed.
 
 > 💡 The first launch takes a few seconds (the app unpacks itself). That's normal.
@@ -51,7 +51,7 @@ nothing else needed.
 ## 🕹️ How to use
 
 1. **Back up your save first** (seriously — see below).
-2. Open `MW5SaveEditor.exe`.
+2. Open `JJsaveEditor.exe`.
 3. Click **Open…** — it points straight at your MW5 saves folder
    (`%LOCALAPPDATA%\MW5Mercs\Saved\SaveGames`).
 4. Edit what you like across the **Mechs / Pilots / Inventory / Factions** tabs.
@@ -152,11 +152,11 @@ python -m nuitka --standalone --enable-plugin=tk-inter \
   --include-data-files=editor/app_icon.ico=app_icon.ico \
   --include-data-files=editor/app_icon.png=app_icon.png \
   --assume-yes-for-downloads \
-  --output-dir=build_out --output-filename=MW5SaveEditor.exe \
+  --output-dir=build_out --output-filename=JJsaveEditor.exe \
   editor/gui.py
 ```
 
-This produces a `MW5SaveEditor` folder; run `MW5SaveEditor.exe` inside it. The released
+This produces a `JJsaveEditor` folder; run `JJsaveEditor.exe` inside it. The released
 builds are produced exactly this way by `.github/workflows/release.yml`. The project moved
 from PyInstaller to Nuitka because PyInstaller's self-extracting launcher tripped more
 antivirus false positives.
@@ -197,6 +197,10 @@ identical to the original.** `editor/test_roundtrip.py` and the model sweep in
 - Everyone on Nexus and GitHub who has filed reports and suggestions.
 
 ## 📝 Changelog
+
+**v1.12.1**
+- Renamed the app executable to `JJsaveEditor.exe` (folder `JJsaveEditor`). No
+  functional changes from v1.12.0.
 
 **v1.12.0**
 - **Active Bay vs Cold Storage** are now shown separately in the Mechs tab — a new
