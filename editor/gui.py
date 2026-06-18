@@ -40,7 +40,7 @@ from savefile import weapon_class, ARMOR_PARTS, REAR_PARTS
 HARDPOINT_LABEL = {"EH": "Energy", "BH": "Ballistic", "MH": "Missile", "Melee": "Melee"}
 
 
-APP_VERSION = "1.12.1"
+APP_VERSION = "1.12.2"
 
 DEFAULT_SAVE_DIR = os.path.expandvars(
     r"%LOCALAPPDATA%\MW5Mercs\Saved\SaveGames"
@@ -542,26 +542,35 @@ class EditorApp(tk.Tk):
         chassis = self._pick_chassis("Add Mech")
         if chassis is None:
             return
+        to_cold = messagebox.askyesno(
+            "Add to Cold Storage?",
+            "Add this mech to Cold Storage?\n\n"
+            "Yes — Cold Storage (recommended): always works, even if your active "
+            "bay is full. Move it to the bay in-game if there's room.\n\n"
+            "No — Active Bay: only appears if you have a free bay slot in-game. "
+            "If your bay is full it won't show up.")
+        location = "cold" if to_cold else "active"
+        where = "Cold Storage" if to_cold else "the Active Bay"
         try:
-            _guid, status = self.save.add_mech(chassis)
+            _guid, status = self.save.add_mech(chassis, location=location)
             self._refresh_mechs()
             label = mech_display(chassis)
             if status == "exact":
-                self.status.set(f"Added {label} — exact copy of one you own. Remember to Save.")
+                self.status.set(f"Added {label} to {where} — exact copy of one you own. Remember to Save.")
             elif status == "real-layout":
-                self.status.set(f"Added {label} with its real hardpoints (empty). "
+                self.status.set(f"Added {label} to {where} with its real hardpoints (empty). "
                                 "Fit weapons in Edit Loadout. Remember to Save.")
                 messagebox.showinfo(
                     "Mech added",
-                    f"Added a {label}. Your save had a real {label} loadout on record, "
-                    "so it got that chassis's correct (empty) hardpoints.\n\n"
+                    f"Added a {label} to {where}. Your save had a real {label} loadout on "
+                    "record, so it got that chassis's correct (empty) hardpoints.\n\n"
                     "Use Edit Loadout to fit weapons and set groups — no Mech Lab needed.")
             else:
-                self.status.set(f"Added {label} (approximate — set hardpoints / refit in Mech Lab). Remember to Save.")
+                self.status.set(f"Added {label} to {where} (approximate — set hardpoints / refit in Mech Lab). Remember to Save.")
                 messagebox.showinfo(
                     "Approximate mech added",
-                    f"You don't own a {label} and your save has no {label} loadout to "
-                    "copy, so it was added as an approximate clone with its weapons "
+                    f"Added a {label} to {where}. You don't own one and your save has no "
+                    f"{label} loadout to copy, so it's an approximate clone with its weapons "
                     "stripped.\n\nEither refit it in the in-game Mech Lab, or use "
                     "\"Set Hardpoints…\" to borrow a layout, then Edit Loadout. "
                     "(A different-chassis mech can't be built perfectly from save "

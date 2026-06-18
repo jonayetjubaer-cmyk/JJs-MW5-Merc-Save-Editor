@@ -204,6 +204,14 @@ identical to the original.** `editor/test_roundtrip.py` and the model sweep in
 
 ## 📝 Changelog
 
+**v1.12.2**
+- **Add Mech → choose Active Bay or Cold Storage.** Adding to Cold Storage always works,
+  even when your active bay is full (which previously made added mechs vanish or throw an
+  "invalid loadout" warning). You can move it to the bay in-game later.
+- **Fix:** approximate added mechs (a chassis you don't own) no longer inherit the
+  template mech's equipment, which had shown up as "invisible" jump jets eating tonnage.
+  They now come through clean for you to refit.
+
 **v1.12.1**
 - Renamed the app executable to `JJsaveEditor.exe` (folder `JJsaveEditor`). No
   functional changes from v1.12.0.

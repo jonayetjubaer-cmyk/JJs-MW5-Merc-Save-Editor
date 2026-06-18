@@ -365,6 +365,29 @@ class Mech:
         cold-storage records)."""
         return self.loadout_type not in NON_OWNED_LOADOUT_TYPES
 
+    def set_cold_storage(self, marker_template=None):
+        """Mark this mech as a cold-storage record by setting its nested-archive
+        MechLoadoutType to ColdStorageLoadout. Active-bay mechs have no
+        MechLoadoutType property, so if it's absent we graft one (deep-copied
+        from `marker_template`, an EnumProperty harvested from any market/cold
+        wrapper) as the first property -- matching the real cold-storage layout
+        [MechLoadoutType, MarketItemMech, Owner]."""
+        p = self.nested.get("MechLoadoutType")
+        if p is None:
+            if marker_template is None:
+                raise RuntimeError("No MechLoadoutType template available to graft.")
+            p = copy.deepcopy(marker_template)
+            p.name = "MechLoadoutType"
+            self.nested.properties.insert(0, p)
+        _set_leaf(p, write_fstring_payload(COLD_STORAGE_LOADOUT_TYPE))
+
+    def clear_loadout_type(self):
+        """Drop any MechLoadoutType property so the mech is treated as an
+        active-bay mech (used when an added mech was cloned from a cold/market
+        donor but should land in the active bay)."""
+        self.nested.properties = [p for p in self.nested.properties
+                                  if p.name != "MechLoadoutType"]
+
     @property
     def chassis(self) -> str:
         p = _path(self.market_item.decoded, "Item", "ItemData",
@@ -524,6 +547,17 @@ class Mech:
             slot.clear()
             for n in range(1, 7):
                 slot.set_group(n, False)
+
+    def strip_equipment(self):
+        """Empty every equipment slot (heat sinks, ammo, jump jets, MASC...).
+        Used for an approximate clone of a DIFFERENT chassis: the donor's
+        equipment belongs to the donor chassis, so carrying it over saddles the
+        new mech with mismatched gear -- e.g. a Javelin donor's jump jets showing
+        up as 'invisible' jets that consume tonnage but don't render in the Mech
+        Lab. Stripping them leaves a clean chassis the player outfits from
+        scratch (the Mech Lab applies the real chassis's slots on refit)."""
+        for slot in self.equipment_slots():
+            slot.clear()
 
     def has_hardpoints(self) -> bool:
         return bool(self.weapon_slots())
@@ -1121,36 +1155,63 @@ class SaveFile:
         footer = arc[ar.pos:]
         return Mech(el, bd, nested, footer)
 
+    def _mech_loadout_type_template(self):
+        """A deep-copyable MechLoadoutType EnumProperty harvested from any
+        market or cold-storage wrapper, used to graft the cold-storage marker
+        onto a mech that doesn't have one. None if the save has neither."""
+        if getattr(self, "_mlt_tmpl", "_") == "_":
+            tmpl = None
+            for el in self._wrappers_array().elements:
+                p = self._mech_from_element(el).nested.get("MechLoadoutType")
+                if p is not None:
+                    tmpl = copy.deepcopy(p)
+                    break
+            self._mlt_tmpl = tmpl
+        return self._mlt_tmpl
+
     def add_mech(self, chassis: str | None = None, *, donor_index: int = 0,
-                 repair: bool = True) -> tuple[bytes, str]:
+                 repair: bool = True, location: str = "active") -> tuple[bytes, str]:
         """Add a mech, returning (new_guid, status).
 
-        Hybrid strategy:
-        - If you already OWN a mech of `chassis` that has a real loadout, clone
-          THAT (an exact, fully-working duplicate)             -> status "exact".
-        - Otherwise clone a donor mech, rename it to `chassis`, repair it, and
-          STRIP its loadout (clear_loadout) so it doesn't carry the donor's
-          stale weapon groups; the player refits it in the Mech Lab
-                                                                -> status "approx".
+        `location`:
+        - "active": goes into the active mech bay (registered in
+          MechStorageList). NOTE: if the in-game bay is full the game can't place
+          it and it won't appear -- use "cold" in that case.
+        - "cold": goes into Cold Storage (MechLoadoutType = ColdStorageLoadout,
+          NOT in MechStorageList). Always safe regardless of bay capacity; the
+          player can move it to the bay in-game if there's room.
+
+        Hybrid clone strategy (both locations):
+        - If you already OWN a mech of `chassis` with a real loadout, clone THAT
+          (exact, fully-working duplicate)                       -> status "exact".
+        - Otherwise clone a donor, rename to `chassis`, repair, and STRIP its
+          loadout so it carries no stale weapon groups            -> status "approx".
         `chassis` is the MechDataAsset PrimaryAssetName, e.g. "AS7-D_MDA"."""
         wrappers = self._wrappers_array()
         storage = self._storage_array()
         new_guid = uuid.uuid4().bytes
         status = "approx"
+        cold = (location == "cold")
 
-        # Default donor must be an ACTIVE-bay mech: cloning a market listing or
-        # cold-storage record would carry its MechLoadoutType and the new mech
-        # wouldn't show up as owned. Fall back to donor_index if none classify.
+        # Pick a donor of the matching kind: a cold-storage wrapper for a cold
+        # add (correct structure already), else an active-bay wrapper.
         src_index = donor_index
         for i, el in enumerate(wrappers.elements):
-            if self._mech_from_element(el).is_owned:
+            lt = self._mech_from_element(el).loadout_type
+            if (cold and lt == COLD_STORAGE_LOADOUT_TYPE) or (not cold and lt == ""):
                 src_index = i
                 break
+        else:
+            # no donor of the preferred kind; fall back to any owned (active) mech
+            for i, el in enumerate(wrappers.elements):
+                if self._mech_from_element(el).is_owned:
+                    src_index = i
+                    break
 
         want = (chassis if chassis.endswith("_MDA") else chassis + "_MDA") if chassis else None
 
-        # Tier 1: an owned mech of the exact chassis, with a non-empty loadout,
-        # is a perfect template -- duplicate it verbatim.
+        # Tier 1: an owned mech of the exact chassis with a non-empty loadout is
+        # a perfect template -- duplicate it verbatim.
         if want:
             for i, el in enumerate(wrappers.elements):
                 if self._wrapper_chassis(el) == want and \
@@ -1180,15 +1241,29 @@ class SaveFile:
                 status = "real-layout"
             else:
                 mech.strip_weapons()
+            # The donor's equipment (heat sinks, jump jets, ammo) belongs to the
+            # DONOR chassis, not the one we're cloning into -- carrying it over
+            # produces phantom gear (e.g. tonnage-eating jump jets that don't show
+            # in the Mech Lab). Strip it so the player fits gear from scratch.
+            mech.strip_equipment()
+
+        # Normalise the wrapper to the requested location.
+        if cold:
+            mech.set_cold_storage(self._mech_loadout_type_template())
+        else:
+            mech.clear_loadout_type()   # ensure active (donor may have been cold/market)
         mech.flush()
 
         wrappers.elements.append(clone_el)
         wrappers.count += 1
 
-        slot = copy.deepcopy(storage.elements[0])
-        slot.get("Value").raw_payload = new_guid
-        storage.elements.append(slot)
-        storage.count += 1
+        # Only active-bay mechs are registered in MechStorageList; cold storage
+        # records are identified solely by their MechLoadoutType.
+        if not cold:
+            slot = copy.deepcopy(storage.elements[0])
+            slot.get("Value").raw_payload = new_guid
+            storage.elements.append(slot)
+            storage.count += 1
         return new_guid, status
 
     def remove_mech(self, guid: bytes):

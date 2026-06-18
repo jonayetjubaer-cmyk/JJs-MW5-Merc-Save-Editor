@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.12.2
+- **Add Mech can now place a mech directly into Cold Storage.** When you add a mech you
+  pick **Cold Storage** (recommended, always works) or **Active Bay**. This fixes added
+  mechs vanishing / triggering an "invalid loadout" warning when the active bay is full:
+  active-bay adds need a free bay slot in-game, whereas cold storage always works and you
+  can move the mech to the bay in-game later.
+- **Fix: approximate added mechs no longer inherit the donor's equipment.** Adding a
+  chassis you don't own used to carry over the template mech's heat sinks and jump jets,
+  which showed up as "invisible" jump jets that ate tonnage but didn't appear in the Mech
+  Lab. Those are now stripped, so you start from a clean chassis and fit gear yourself.
+- Note: an approximate mech of a chassis you don't own still borrows that template's
+  internals (engine, max armor, jump-jet capacity), since those live in the game files and
+  not the save. Max its armor and refit it in the Mech Lab.
+
 ## v1.12.1
 - Renamed the executable from `MW5SaveEditor.exe` to `JJsaveEditor.exe` (the folder in
   the download is now `JJsaveEditor` too). No functional changes from v1.12.0.
