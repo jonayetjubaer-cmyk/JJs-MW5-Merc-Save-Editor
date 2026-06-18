@@ -109,6 +109,54 @@ HERO_NAMES = {
 }
 
 
+# Per-chassis tonnage (public MW5 roster facts, used only for display: weight-
+# class colour-coding and a tonnage badge -- no game assets involved).
+CHASSIS_TONNAGE = {
+    # Light
+    "Adder": 35, "Commando": 25, "Fire Moth": 20, "Firestarter": 35, "Flea": 20,
+    "Javelin": 30, "Jenner": 35, "Kit Fox": 30, "Locust": 20, "Mist Lynx": 25,
+    "Panther": 35, "Raven": 35, "Spider": 30, "UrbanMech": 30, "Wolfhound": 35,
+    # Medium
+    "Assassin": 40, "Blackjack": 45, "Centurion": 50, "Cicada": 40, "Crab": 50,
+    "Dervish": 55, "Enforcer": 50, "Griffin": 55, "Hatchetman": 45, "Hunchback": 50,
+    "Kintaro": 55, "Nova": 50, "Phoenix Hawk": 45, "Shadow Cat": 45, "Shadow Hawk": 55,
+    "Stormcrow": 55, "Trebuchet": 50, "Vindicator": 45, "Viper": 40, "Vulcan": 40,
+    "Wolverine": 55,
+    # Heavy
+    "Archer": 70, "Black Knight": 75, "Cataphract": 70, "Catapult": 65, "Champion": 60,
+    "Crusader": 65, "Dragon": 60, "Grasshopper": 70, "Hellbringer": 65, "JagerMech": 65,
+    "Loader King": 65, "Mad Dog": 60, "Marauder": 75, "Orion": 75, "Quickdraw": 60,
+    "Rifleman": 60, "Summoner": 70, "Thunderbolt": 65, "Timber Wolf": 75, "Warhammer": 70,
+    # Assault
+    "Annihilator": 100, "Atlas": 100, "Awesome": 80, "Banshee": 95, "Battlemaster": 85,
+    "Berserker": 100, "Charger": 80, "Corsair": 95, "Cyclops": 90, "Dire Wolf": 100,
+    "Executioner": 95, "Gargoyle": 80, "Hatamoto-Chi": 80, "Highlander": 90,
+    "King Crab": 100, "Longbow": 85, "Mauler": 90, "Nightstar": 95, "Stalker": 85,
+    "Victor": 80, "Warhawk": 85, "Zeus": 80,
+}
+
+
+def weight_class(tons) -> str:
+    """Tonnage -> Light / Medium / Heavy / Assault (empty if unknown)."""
+    if not tons:
+        return ""
+    if tons <= 35:
+        return "Light"
+    if tons <= 55:
+        return "Medium"
+    if tons <= 75:
+        return "Heavy"
+    return "Assault"
+
+
+def chassis_info(name: str):
+    """(tonnage, weight_class) for a variant code or asset name; (None, '') if
+    the chassis isn't in the roster."""
+    chassis = VARIANT_TO_CHASSIS.get(variant_code(name))
+    tons = CHASSIS_TONNAGE.get(chassis) if chassis else None
+    return (tons, weight_class(tons))
+
+
 def asset_name(variant: str) -> str:
     """Variant code -> MechDataAsset PrimaryAssetName."""
     return variant if variant.endswith("_MDA") else variant + "_MDA"

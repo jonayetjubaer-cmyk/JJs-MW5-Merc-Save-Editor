@@ -204,6 +204,13 @@ identical to the original.** `editor/test_roundtrip.py` and the model sweep in
 
 ## 📝 Changelog
 
+**v1.13.0**
+- **Mechs tab redesigned as cards** — each mech shows a weight-class icon, name,
+  tonnage, Active Bay / Cold Storage location, and a colour-coded class badge.
+- **Edit Loadout is now a body-location layout** — weapons and equipment on a
+  paper-doll of the mech (head, torsos, arms, legs) like the in-game Mech Lab, with
+  fire groups in a table below. The dialog also scrolls now, so nothing gets cut off.
+
 **v1.12.2**
 - **Add Mech → choose Active Bay or Cold Storage.** Adding to Cold Storage always works,
   even when your active bay is full (which previously made added mechs vanish or throw an

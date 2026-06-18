@@ -33,14 +33,47 @@ def _resource_path(name: str) -> str:
         if os.path.exists(p):
             return p
     return os.path.join(candidates[-1], name)
-from mech_catalog import LABELED, asset_name, display as mech_display, variant_code
+from mech_catalog import LABELED, asset_name, display as mech_display, variant_code, chassis_info
 from item_catalog import CATALOG, CATEGORY_INVENTORY, WEAPONS, EQUIPMENT, AMMO
 from savefile import weapon_class, ARMOR_PARTS, REAR_PARTS
 
 HARDPOINT_LABEL = {"EH": "Energy", "BH": "Ballistic", "MH": "Missile", "Melee": "Melee"}
 
+# Body locations in canonical Mech-Lab order, for grouping the loadout editor.
+LOCATION_ORDER = ["Head", "CenterTorso", "LeftTorso", "RightTorso",
+                  "LeftArm", "RightArm", "LeftLeg", "RightLeg"]
+LOCATION_LABEL = {"Head": "Head", "CenterTorso": "Center Torso",
+                  "LeftTorso": "Left Torso", "RightTorso": "Right Torso",
+                  "LeftArm": "Left Arm", "RightArm": "Right Arm",
+                  "LeftLeg": "Left Leg", "RightLeg": "Right Leg"}
 
-APP_VERSION = "1.12.2"
+# weight-class colours for the mech-bay cards (icon colour; badge bg/fg)
+CLASS_ICON = {"Light": "#185fa5", "Medium": "#1d9e75",
+              "Heavy": "#ba7517", "Assault": "#d85a30"}
+CLASS_BADGE = {"Light": ("#e6f1fb", "#0c447c"), "Medium": ("#e1f5ee", "#085041"),
+               "Heavy": ("#faeeda", "#633806"), "Assault": ("#faece7", "#712b13")}
+CARD_BG = "#ffffff"
+CARD_BG_COLD = "#f3f4f8"
+CARD_BORDER = "#cfcfcf"
+CARD_BORDER_SEL = "#2d6cdf"
+
+
+def weapon_slot_location(slot_id: str) -> str:
+    """Map a weapon hardpoint slot id (e.g. 'Torso_Left_EH1_...', 'Head_MH1_...',
+    'Arm_Right_...') to a canonical body location matching the equipment
+    part labels (LeftTorso, Head, RightArm, ...)."""
+    t = slot_id.split("_")
+    part = t[0] if t else ""
+    side = t[1] if len(t) > 1 else ""
+    if part == "Head":
+        return "Head"
+    if part in ("Torso", "Arm", "Leg"):
+        base = "Torso" if part == "Torso" else part
+        return {"Left": "Left", "Right": "Right", "Center": "Center"}.get(side, side) + base
+    return part or "Other"
+
+
+APP_VERSION = "1.13.0"
 
 DEFAULT_SAVE_DIR = os.path.expandvars(
     r"%LOCALAPPDATA%\MW5Mercs\Saved\SaveGames"
@@ -116,27 +149,24 @@ class EditorApp(tk.Tk):
         self.mech_count_var = tk.StringVar(value="")
         ttk.Label(mwrap, textvariable=self.mech_count_var).pack(anchor="w", pady=(0, 2))
 
-        tw = ttk.Frame(mwrap)
-        tw.pack(fill="both", expand=True)
-        cols = ("idx", "name", "code", "loc", "guid")
-        self.mech_tree = ttk.Treeview(tw, columns=cols, show="headings",
-                                      selectmode="browse")
-        self.mech_tree.heading("idx", text="#")
-        self.mech_tree.heading("name", text="Mech")
-        self.mech_tree.heading("code", text="Asset ID")
-        self.mech_tree.heading("loc", text="Location")
-        self.mech_tree.heading("guid", text="Instance GUID")
-        self.mech_tree.column("idx", width=36, anchor="center")
-        self.mech_tree.column("name", width=200)
-        self.mech_tree.column("code", width=110)
-        self.mech_tree.column("loc", width=92, anchor="center")
-        self.mech_tree.column("guid", width=250)
-        # cold-storage rows are dimmed so the split reads at a glance
-        self.mech_tree.tag_configure("cold", foreground="#6f7aa8")
-        msb = ttk.Scrollbar(tw, orient="vertical", command=self.mech_tree.yview)
-        self.mech_tree.configure(yscrollcommand=msb.set)
-        self.mech_tree.pack(side="left", fill="both", expand=True)
+        cwrap = ttk.Frame(mwrap)
+        cwrap.pack(fill="both", expand=True)
+        self.mech_canvas = tk.Canvas(cwrap, highlightthickness=0, width=320)
+        msb = ttk.Scrollbar(cwrap, orient="vertical", command=self.mech_canvas.yview)
+        self.mech_canvas.configure(yscrollcommand=msb.set)
         msb.pack(side="right", fill="y")
+        self.mech_canvas.pack(side="left", fill="both", expand=True)
+        self.mech_cards = ttk.Frame(self.mech_canvas)
+        self._mc_win = self.mech_canvas.create_window((0, 0), window=self.mech_cards, anchor="nw")
+        self.mech_cards.bind("<Configure>",
+                             lambda e: self.mech_canvas.configure(scrollregion=self.mech_canvas.bbox("all")))
+        self.mech_canvas.bind("<Configure>",
+                              lambda e: self.mech_canvas.itemconfigure(self._mc_win, width=e.width))
+        self.mech_canvas.bind("<Enter>", lambda e: self._bind_mech_wheel(True))
+        self.mech_canvas.bind("<Leave>", lambda e: self._bind_mech_wheel(False))
+        self._mech_objs = []       # Mech per card, in display order
+        self._mech_card_frames = []
+        self._sel_mech = None      # selected index into _mech_objs
 
         side = ttk.Frame(self.mech_tab)
         side.pack(side="left", fill="y", pady=4)
@@ -147,6 +177,68 @@ class EditorApp(tk.Tk):
         ttk.Button(side, text="Repair (full armor)", command=self.on_repair).pack(fill="x", pady=2)
         ttk.Button(side, text="Repair ALL Mechs", command=self.on_repair_all).pack(fill="x", pady=2)
         ttk.Button(side, text="Remove", command=self.on_remove_mech).pack(fill="x", pady=2)
+
+    # -- mech-bay cards ----------------------------------------------------
+    def _bind_mech_wheel(self, on):
+        seqs = ("<MouseWheel>", "<Button-4>", "<Button-5>")
+        if on:
+            for s in seqs:
+                self.mech_canvas.bind_all(s, self._mech_wheel)
+        else:
+            for s in seqs:
+                self.mech_canvas.unbind_all(s)
+
+    def _mech_wheel(self, e):
+        if e.num == 5 or e.delta < 0:
+            self.mech_canvas.yview_scroll(1, "units")
+        elif e.num == 4 or e.delta > 0:
+            self.mech_canvas.yview_scroll(-1, "units")
+
+    def _draw_mech_glyph(self, c, color):
+        """A simple original bipedal-mech silhouette (no game art)."""
+        for x0, y0, x1, y1 in ((16, 3, 24, 9), (12, 10, 28, 24), (6, 12, 11, 23),
+                               (29, 12, 34, 23), (13, 25, 18, 38), (22, 25, 27, 38)):
+            c.create_rectangle(x0, y0, x1, y1, fill=color, outline=color)
+
+    def _make_mech_card(self, idx, m, location):
+        tons, cls = chassis_info(m.chassis)
+        cold = location == "Cold storage"
+        bg = CARD_BG_COLD if cold else CARD_BG
+        card = tk.Frame(self.mech_cards, bg=bg, highlightbackground=CARD_BORDER,
+                        highlightcolor=CARD_BORDER, highlightthickness=1, bd=0)
+        card.pack(fill="x", padx=2, pady=3)
+
+        ic = tk.Canvas(card, width=40, height=42, bg=bg, highlightthickness=0)
+        ic.pack(side="left", padx=(8, 6), pady=6)
+        self._draw_mech_glyph(ic, CLASS_ICON.get(cls, "#888888"))
+
+        badge_bg, badge_fg = CLASS_BADGE.get(cls, ("#eeeeee", "#333333"))
+        tk.Label(card, text=(cls or "?").upper(), bg=badge_bg, fg=badge_fg,
+                 font=("", 8, "bold"), padx=6, pady=2).pack(side="right", padx=8)
+
+        mid = tk.Frame(card, bg=bg)
+        mid.pack(side="left", fill="x", expand=True, pady=6)
+        tk.Label(mid, text=mech_display(m.chassis), bg=bg, anchor="w",
+                 justify="left", font=("", 10, "bold")).pack(fill="x")
+        tk.Label(mid, text=f"{tons or '?'}t · {location}", bg=bg, fg="#777777",
+                 anchor="w", font=("", 8)).pack(fill="x")
+
+        for w in (card, ic, mid, *mid.winfo_children()):
+            w.bind("<Button-1>", lambda e, i=idx: self._select_mech_card(i))
+            w.bind("<Double-Button-1>",
+                   lambda e, i=idx: (self._select_mech_card(i), self.on_edit_loadout()))
+        self._mech_card_frames.append(card)
+
+    def _select_mech_card(self, idx):
+        self._sel_mech = idx
+        self._highlight_selected()
+
+    def _highlight_selected(self):
+        for i, card in enumerate(self._mech_card_frames):
+            sel = (i == self._sel_mech)
+            card.configure(highlightbackground=CARD_BORDER_SEL if sel else CARD_BORDER,
+                           highlightcolor=CARD_BORDER_SEL if sel else CARD_BORDER,
+                           highlightthickness=2 if sel else 1)
 
     # -- pilot tab ---------------------------------------------------------
     def _build_pilot_tab(self):
@@ -507,34 +599,34 @@ class EditorApp(tk.Tk):
         return self.save.mechs() + self.save.cold_storage_mechs()
 
     def _refresh_mechs(self):
-        self.mech_tree.delete(*self.mech_tree.get_children())
+        prev = self._sel_mech
+        for w in self.mech_cards.winfo_children():
+            w.destroy()
+        self._mech_card_frames = []
         active = self.save.mechs()
         cold = self.save.cold_storage_mechs()
-        i = 0
-        for m in active:
-            self.mech_tree.insert("", "end", iid=str(i),
-                                  values=(i, mech_display(m.chassis),
-                                          variant_code(m.chassis), "Active Bay", m.guid.hex()))
-            i += 1
-        for m in cold:
-            self.mech_tree.insert("", "end", iid=str(i),
-                                  values=(i, mech_display(m.chassis),
-                                          variant_code(m.chassis), "Cold Storage", m.guid.hex()),
-                                  tags=("cold",))
-            i += 1
+        self._mech_objs = list(active) + list(cold)
+        for idx, m in enumerate(self._mech_objs):
+            self._make_mech_card(idx, m, "Active bay" if idx < len(active) else "Cold storage")
+        if not self._mech_objs:
+            self._sel_mech = None
+        elif prev is not None and prev < len(self._mech_objs):
+            self._sel_mech = prev
+        else:
+            self._sel_mech = 0
+        self._highlight_selected()
+        self.mech_canvas.yview_moveto(0)
         self.mech_count_var.set(
             f"Active bay: {len(active)}    Cold storage: {len(cold)}    (total {len(active) + len(cold)})")
 
     def _selected_mech_index(self):
-        sel = self.mech_tree.selection()
-        return int(sel[0]) if sel else None
+        return self._sel_mech
 
     def _selected_mech(self):
-        idx = self._selected_mech_index()
-        if idx is None:
+        if self._sel_mech is None:
             return None
         lst = self._mech_list()
-        return lst[idx] if 0 <= idx < len(lst) else None
+        return lst[self._sel_mech] if 0 <= self._sel_mech < len(lst) else None
 
     def on_add_mech(self):
         if not self._guard():
@@ -974,7 +1066,7 @@ class LoadoutDialog(tk.Toplevel):
         self.save = save
         self.trait_names = trait_names or []
         self.title(f"Edit Loadout — {mech_display(mech.chassis)}")
-        self.geometry("760x620")
+        self.geometry("1000x660")
         self.transient(parent)
 
         # item catalog: use the save-merged one if given, else the static lists
@@ -1010,74 +1102,117 @@ class LoadoutDialog(tk.Toplevel):
 
     # -- UI ---------------------------------------------------------------
     def _build(self):
-        ttk.Label(self, text="Weapons  (pick a weapon per hardpoint; ✓ the fire groups)",
+        # Apply/Cancel pinned to the bottom first, so they stay reachable no
+        # matter how tall the loadout content gets.
+        btns = ttk.Frame(self)
+        btns.pack(side="bottom", fill="x", padx=10, pady=10)
+        ttk.Button(btns, text="Apply", command=self._apply).pack(side="right")
+        ttk.Button(btns, text="Cancel", command=self.destroy).pack(side="right", padx=6)
+
+        # Everything else lives in ONE vertically scrollable area (scrollbar +
+        # mouse wheel), so weapons, equipment, armor and traits are all reachable
+        # even on tall mechs / small screens.
+        outer = ttk.Frame(self)
+        outer.pack(fill="both", expand=True)
+        canvas = tk.Canvas(outer, highlightthickness=0)
+        sb = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+        content = ttk.Frame(canvas)
+        cwin = canvas.create_window((0, 0), window=content, anchor="nw")
+        content.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.bind("<Configure>", lambda e: canvas.itemconfigure(cwin, width=e.width))
+
+        # Mouse-wheel scrolling while the dialog is open. bind_all catches the
+        # wheel wherever the cursor is (over comboboxes etc.); unbound on close.
+        def _wheel(e):
+            if e.num == 5 or e.delta < 0:
+                canvas.yview_scroll(1, "units")
+            elif e.num == 4 or e.delta > 0:
+                canvas.yview_scroll(-1, "units")
+        canvas.bind_all("<MouseWheel>", _wheel)
+        canvas.bind_all("<Button-4>", _wheel)
+        canvas.bind_all("<Button-5>", _wheel)
+        self.bind("<Destroy>", lambda e: self._unbind_wheel(canvas) if e.widget is self else None)
+
+        ttk.Label(content, text="Loadout — by body location  (pick a weapon/equipment per slot)",
                   font=("", 10, "bold")).pack(anchor="w", padx=10, pady=(10, 2))
 
-        # scrollable weapon area
-        outer = ttk.Frame(self)
-        outer.pack(fill="both", expand=True, padx=10)
-        canvas = tk.Canvas(outer, highlightthickness=0, height=300)
-        sb = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
-        frame = ttk.Frame(canvas)
-        frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.create_window((0, 0), window=frame, anchor="nw")
-        canvas.configure(yscrollcommand=sb.set)
-        canvas.pack(side="left", fill="both", expand=True)
-        sb.pack(side="right", fill="y")
+        # group weapon hardpoints + equipment slots by body location
+        wloc, eloc = {}, {}
+        for slot in self.slots:
+            wloc.setdefault(weapon_slot_location(slot.slot_id), []).append(slot)
+        for slot in self.eq_slots:
+            eloc.setdefault(slot.part_label, []).append(slot)
 
-        # header row
-        ttk.Label(frame, text="Hardpoint", width=30).grid(row=0, column=0, sticky="w")
-        ttk.Label(frame, text="Weapon", width=26).grid(row=0, column=1, sticky="w")
-        for g in range(1, 7):
-            ttk.Label(frame, text=str(g), width=3).grid(row=0, column=1 + g)
-
-        for r, slot in enumerate(self.slots, start=1):
-            cls = slot.hardpoint_class or "?"
-            loc = slot.slot_id.rsplit("_", 1)[0] if "_" in slot.slot_id else slot.slot_id
-            ttk.Label(frame, text=f"{HARDPOINT_LABEL.get(cls, cls)}: {loc}",
-                      width=30).grid(row=r, column=0, sticky="w", pady=1)
-
-            options = ["(empty)"] + [n for n, _t in self._by_class.get(cls, [])]
-            cur = slot.weapon_name
-            if cur not in ("None", "") and cur not in options:
-                options.insert(1, cur)   # keep an unrecognized current weapon
-            var = tk.StringVar(value="(empty)" if slot.is_empty else cur)
-            cb = ttk.Combobox(frame, textvariable=var, values=options, width=24, state="readonly")
-            cb.grid(row=r, column=1, sticky="w", padx=2)
-
-            gvars = []
-            for g in range(1, 7):
-                gv = tk.BooleanVar(value=(g in slot.groups()))
-                ttk.Checkbutton(frame, variable=gv).grid(row=r, column=1 + g)
-                gvars.append(gv)
-            self.slot_widgets.append((slot, var, gvars))
-
-        # equipment rows (in the same scroll frame, below the weapons)
-        er = len(self.slots) + 2
-        if self.eq_slots:
-            ttk.Label(frame, text="Equipment  (heat sinks, ammo, jump jets…)",
-                      font=("", 9, "bold")).grid(row=er, column=0, columnspan=3,
-                                                 sticky="w", pady=(10, 2))
-            er += 1
-            for slot in self.eq_slots:
+        # 2D paper-doll: panels arranged like a mech's body
+        pd = ttk.Frame(content)
+        pd.pack(padx=10, pady=2)
+        POS = {"Head": (0, 2), "LeftArm": (1, 0), "LeftTorso": (1, 1),
+               "CenterTorso": (1, 2), "RightTorso": (1, 3), "RightArm": (1, 4),
+               "LeftLeg": (2, 1), "RightLeg": (2, 3)}
+        for loc, (rr, cc) in POS.items():
+            panel = ttk.LabelFrame(pd, text=LOCATION_LABEL.get(loc, loc))
+            panel.grid(row=rr, column=cc, padx=3, pady=3, sticky="nsew")
+            has_any = False
+            for slot in wloc.get(loc, []):
+                has_any = True
+                cls = slot.hardpoint_class or "?"
+                row = ttk.Frame(panel)
+                row.pack(fill="x", padx=3, pady=1)
+                ttk.Label(row, text=HARDPOINT_LABEL.get(cls, cls), width=9,
+                          font=("", 8)).pack(side="left")
+                options = ["(empty)"] + [n for n, _t in self._by_class.get(cls, [])]
+                cur = slot.weapon_name
+                if cur not in ("None", "") and cur not in options:
+                    options.insert(1, cur)
+                var = tk.StringVar(value="(empty)" if slot.is_empty else cur)
+                ttk.Combobox(row, textvariable=var, values=options, width=15,
+                             state="readonly").pack(side="left")
+                gvars = [tk.BooleanVar(value=(g in slot.groups())) for g in range(1, 7)]
+                self.slot_widgets.append((slot, var, gvars))
+            for slot in eloc.get(loc, []):
+                has_any = True
+                kind = "Jump Jet" if "JumpJet" in slot.slot_type else "Gear"
+                row = ttk.Frame(panel)
+                row.pack(fill="x", padx=3, pady=1)
+                ttk.Label(row, text=kind, width=9, font=("", 8)).pack(side="left")
                 opts = self._equip_options(slot.slot_type)
                 names = ["(empty)"] + [n for n, _t in opts]
                 cur = slot.equip_name
                 if cur not in ("None", "") and cur not in names:
                     names.insert(1, cur)
-                kind = "JumpJet" if "JumpJet" in slot.slot_type else "General"
-                ttk.Label(frame, text=f"{slot.part_label}  [{kind}]",
-                          width=30).grid(row=er, column=0, sticky="w", pady=1)
                 var = tk.StringVar(value="(empty)" if slot.is_empty else cur)
-                ttk.Combobox(frame, textvariable=var, values=names, width=24,
-                             state="readonly").grid(row=er, column=1, columnspan=6, sticky="w", padx=2)
+                ttk.Combobox(row, textvariable=var, values=names, width=15,
+                             state="readonly").pack(side="left")
                 self.eq_widgets.append((slot, var))
-                er += 1
+            if not has_any:
+                ttk.Label(panel, text="(none)", foreground="#999",
+                          font=("", 8)).pack(padx=3, pady=2)
+
+        # fire groups: a compact aligned table (6 toggles don't fit the body panels)
+        if self.slot_widgets:
+            ttk.Separator(content, orient="horizontal").pack(fill="x", padx=10, pady=8)
+            ttk.Label(content, text="Fire groups", font=("", 10, "bold")).pack(anchor="w", padx=10)
+            fgf = ttk.Frame(content)
+            fgf.pack(fill="x", padx=10, pady=2)
+            ttk.Label(fgf, text="Weapon hardpoint", width=34).grid(row=0, column=0, sticky="w")
+            for g in range(1, 7):
+                ttk.Label(fgf, text=str(g), width=3).grid(row=0, column=g)
+            for i, (slot, var, gvars) in enumerate(self.slot_widgets, start=1):
+                loc = weapon_slot_location(slot.slot_id)
+                cls = slot.hardpoint_class or "?"
+                ttk.Label(fgf, width=34, anchor="w",
+                          text=f"{LOCATION_LABEL.get(loc, loc)} · {HARDPOINT_LABEL.get(cls, cls)}"
+                          ).grid(row=i, column=0, sticky="w", pady=1)
+                for gi, gv in enumerate(gvars, start=1):
+                    ttk.Checkbutton(fgf, variable=gv).grid(row=i, column=gi)
 
         # armor
-        ttk.Separator(self, orient="horizontal").pack(fill="x", padx=10, pady=8)
-        ttk.Label(self, text="Armor (current)", font=("", 10, "bold")).pack(anchor="w", padx=10)
-        af = ttk.Frame(self)
+        ttk.Separator(content, orient="horizontal").pack(fill="x", padx=10, pady=8)
+        ttk.Label(content, text="Armor (current)", font=("", 10, "bold")).pack(anchor="w", padx=10)
+        af = ttk.Frame(content)
         af.pack(fill="x", padx=10, pady=4)
         locs = ARMOR_PARTS + REAR_PARTS
         for i, loc in enumerate(locs):
@@ -1088,17 +1223,17 @@ class LoadoutDialog(tk.Toplevel):
             v = tk.StringVar(value=str(int(self.mech.armor_value(loc))))
             ttk.Entry(cell, textvariable=v, width=6).pack(side="left")
             self.armor_vars[loc] = v
-        ttk.Button(self, text="Max armor (= installed)", command=self._max_armor).pack(anchor="w", padx=10, pady=2)
+        ttk.Button(content, text="Max armor (= installed)", command=self._max_armor).pack(anchor="w", padx=10, pady=2)
 
         # traits (Cantina-style mech quirks) -- experimental
         if self.save is not None:
-            ttk.Separator(self, orient="horizontal").pack(fill="x", padx=10, pady=8)
-            ttk.Label(self, text="Mech Traits (experimental)",
+            ttk.Separator(content, orient="horizontal").pack(fill="x", padx=10, pady=8)
+            ttk.Label(content, text="Mech Traits (experimental)",
                       font=("", 10, "bold")).pack(anchor="w", padx=10)
-            ttk.Label(self, text="Cantina-style quirks (e.g. Faster Cooling). Untested in-game — "
+            ttk.Label(content, text="Cantina-style quirks (e.g. Faster Cooling). Untested in-game — "
                       "back up your save before relying on these.",
                       foreground="#a00", wraplength=720, justify="left").pack(anchor="w", padx=10)
-            tfrm = ttk.Frame(self)
+            tfrm = ttk.Frame(content)
             tfrm.pack(fill="x", padx=10, pady=4)
             self.mtrait_list = tk.Listbox(tfrm, height=3, width=40, exportselection=False)
             self.mtrait_list.pack(side="left", fill="y")
@@ -1116,11 +1251,12 @@ class LoadoutDialog(tk.Toplevel):
             ttk.Button(bf, text="Remove", command=self._remove_trait).pack(side="left", padx=4)
             self._refresh_traits()
 
-        # buttons
-        btns = ttk.Frame(self)
-        btns.pack(fill="x", padx=10, pady=10)
-        ttk.Button(btns, text="Apply", command=self._apply).pack(side="right")
-        ttk.Button(btns, text="Cancel", command=self.destroy).pack(side="right", padx=6)
+    def _unbind_wheel(self, canvas):
+        for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+            try:
+                canvas.unbind_all(seq)
+            except tk.TclError:
+                pass
 
     def _refresh_traits(self):
         self.mtrait_list.delete(0, "end")

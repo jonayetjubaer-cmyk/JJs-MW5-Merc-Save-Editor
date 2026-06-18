@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.13.0
+- **Visual overhaul of the Mechs tab.** The mech bay is now a list of **cards** with a
+  weight-class icon, the mech's name, tonnage, Active Bay / Cold Storage location, and a
+  colour-coded class badge (Light / Medium / Heavy / Assault). Click to select,
+  double-click to edit the loadout.
+- **Edit Loadout is now a body-location layout.** Weapons and equipment are shown on a
+  "paper-doll" of the mech (Head up top; arms, torsos across the middle; legs below), like
+  the in-game Mech Lab, with fire groups in an aligned table underneath.
+- **Edit Loadout scrolls** (scrollbar + mouse wheel), and Apply / Cancel are always
+  visible, so nothing gets cut off on tall mechs or smaller screens.
+
 ## v1.12.2
 - **Add Mech can now place a mech directly into Cold Storage.** When you add a mech you
   pick **Cold Storage** (recommended, always works) or **Active Bay**. This fixes added
