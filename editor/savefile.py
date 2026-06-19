@@ -1092,7 +1092,8 @@ class SaveFile:
         WEAPON_T = {"MWTraceWeaponDataAsset", "MWProjectileWeaponDataAsset",
                     "MWMissileWeaponDataAsset", "MWMeleeWeaponDataAsset",
                     "MWAMSWeaponDataAsset"}
-        EQUIP_T = {"MWHeatSinkDataAsset", "MWJumpJetDataAsset", "MWMASCDataAsset"}
+        EQUIP_T = {"MWHeatSinkDataAsset", "MWJumpJetDataAsset", "MWMASCDataAsset",
+                   "MWECMDataAsset"}
         out = {"weapon": set(), "equipment": set(), "ammo": set()}
 
         def scan(pl, depth=0):

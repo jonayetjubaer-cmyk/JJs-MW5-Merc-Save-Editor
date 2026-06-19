@@ -204,6 +204,15 @@ identical to the original.** `editor/test_roundtrip.py` and the model sweep in
 
 ## 📝 Changelog
 
+**v1.13.1**
+- **Fix:** Edit Loadout no longer hides hardpoints/equipment outside the 8 standard
+  body locations (a 1.13.0 regression that hid weapons and fire groups on heavily
+  modded mechs). Every hardpoint now shows, with non-standard ones grouped under
+  "Other hardpoints".
+- **New:** a **Body / List** view toggle in Edit Loadout — List shows every
+  hardpoint in one dense column with inline fire groups, ideal for slot-heavy mechs.
+- **Fix:** ECM (`MWECMDataAsset`) is now recognised in the equipment lists.
+
 **v1.13.0**
 - **Mechs tab redesigned as cards** — each mech shows a weight-class icon, name,
   tonnage, Active Bay / Cold Storage location, and a colour-coded class badge.

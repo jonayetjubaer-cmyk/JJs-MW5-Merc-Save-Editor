@@ -73,7 +73,7 @@ def weapon_slot_location(slot_id: str) -> str:
     return part or "Other"
 
 
-APP_VERSION = "1.13.0"
+APP_VERSION = "1.13.1"
 
 DEFAULT_SAVE_DIR = os.path.expandvars(
     r"%LOCALAPPDATA%\MW5Mercs\Saved\SaveGames"
@@ -1091,14 +1091,39 @@ class LoadoutDialog(tk.Toplevel):
 
         self.slots = mech.weapon_slots()
         self.eq_slots = mech.equipment_slots()
+        # Vars persist for the dialog's lifetime so switching Body/List view keeps
+        # in-progress edits (both views bind widgets to these same vars).
         self.slot_widgets = []   # (slot, weapon_var, [group_vars])
+        for slot in self.slots:
+            wv = tk.StringVar(value="(empty)" if slot.is_empty else slot.weapon_name)
+            gv = [tk.BooleanVar(value=(g in slot.groups())) for g in range(1, 7)]
+            self.slot_widgets.append((slot, wv, gv))
         self.eq_widgets = []     # (equip_slot, equip_var)
+        for slot in self.eq_slots:
+            ev = tk.StringVar(value="(empty)" if slot.is_empty else slot.equip_name)
+            self.eq_widgets.append((slot, ev))
         self.armor_vars = {}     # location -> StringVar
+        self.view_mode = tk.StringVar(value=getattr(LoadoutDialog, "_last_mode", "body"))
 
         self._build()
 
     def _equip_options(self, slot_type):
         return self._jumpjets if "JumpJet" in slot_type else self._general_equip
+
+    def _weapon_options(self, slot):
+        cls = slot.hardpoint_class or "?"
+        opts = ["(empty)"] + [n for n, _t in self._by_class.get(cls, [])]
+        cur = slot.weapon_name
+        if cur not in ("None", "") and cur not in opts:
+            opts.insert(1, cur)
+        return opts
+
+    def _equip_names(self, slot):
+        names = ["(empty)"] + [n for n, _t in self._equip_options(slot.slot_type)]
+        cur = slot.equip_name
+        if cur not in ("None", "") and cur not in names:
+            names.insert(1, cur)
+        return names
 
     # -- UI ---------------------------------------------------------------
     def _build(self):
@@ -1136,78 +1161,19 @@ class LoadoutDialog(tk.Toplevel):
         canvas.bind_all("<Button-5>", _wheel)
         self.bind("<Destroy>", lambda e: self._unbind_wheel(canvas) if e.widget is self else None)
 
-        ttk.Label(content, text="Loadout — by body location  (pick a weapon/equipment per slot)",
-                  font=("", 10, "bold")).pack(anchor="w", padx=10, pady=(10, 2))
+        # view toggle: Body (paper-doll) or List (dense, all hardpoints)
+        vt = ttk.Frame(content)
+        vt.pack(anchor="w", padx=10, pady=(10, 0))
+        ttk.Label(vt, text="Loadout view:").pack(side="left")
+        ttk.Radiobutton(vt, text="Body", value="body", variable=self.view_mode,
+                        command=self._switch_view).pack(side="left", padx=4)
+        ttk.Radiobutton(vt, text="List (all hardpoints)", value="list",
+                        variable=self.view_mode, command=self._switch_view).pack(side="left")
 
-        # group weapon hardpoints + equipment slots by body location
-        wloc, eloc = {}, {}
-        for slot in self.slots:
-            wloc.setdefault(weapon_slot_location(slot.slot_id), []).append(slot)
-        for slot in self.eq_slots:
-            eloc.setdefault(slot.part_label, []).append(slot)
-
-        # 2D paper-doll: panels arranged like a mech's body
-        pd = ttk.Frame(content)
-        pd.pack(padx=10, pady=2)
-        POS = {"Head": (0, 2), "LeftArm": (1, 0), "LeftTorso": (1, 1),
-               "CenterTorso": (1, 2), "RightTorso": (1, 3), "RightArm": (1, 4),
-               "LeftLeg": (2, 1), "RightLeg": (2, 3)}
-        for loc, (rr, cc) in POS.items():
-            panel = ttk.LabelFrame(pd, text=LOCATION_LABEL.get(loc, loc))
-            panel.grid(row=rr, column=cc, padx=3, pady=3, sticky="nsew")
-            has_any = False
-            for slot in wloc.get(loc, []):
-                has_any = True
-                cls = slot.hardpoint_class or "?"
-                row = ttk.Frame(panel)
-                row.pack(fill="x", padx=3, pady=1)
-                ttk.Label(row, text=HARDPOINT_LABEL.get(cls, cls), width=9,
-                          font=("", 8)).pack(side="left")
-                options = ["(empty)"] + [n for n, _t in self._by_class.get(cls, [])]
-                cur = slot.weapon_name
-                if cur not in ("None", "") and cur not in options:
-                    options.insert(1, cur)
-                var = tk.StringVar(value="(empty)" if slot.is_empty else cur)
-                ttk.Combobox(row, textvariable=var, values=options, width=15,
-                             state="readonly").pack(side="left")
-                gvars = [tk.BooleanVar(value=(g in slot.groups())) for g in range(1, 7)]
-                self.slot_widgets.append((slot, var, gvars))
-            for slot in eloc.get(loc, []):
-                has_any = True
-                kind = "Jump Jet" if "JumpJet" in slot.slot_type else "Gear"
-                row = ttk.Frame(panel)
-                row.pack(fill="x", padx=3, pady=1)
-                ttk.Label(row, text=kind, width=9, font=("", 8)).pack(side="left")
-                opts = self._equip_options(slot.slot_type)
-                names = ["(empty)"] + [n for n, _t in opts]
-                cur = slot.equip_name
-                if cur not in ("None", "") and cur not in names:
-                    names.insert(1, cur)
-                var = tk.StringVar(value="(empty)" if slot.is_empty else cur)
-                ttk.Combobox(row, textvariable=var, values=names, width=15,
-                             state="readonly").pack(side="left")
-                self.eq_widgets.append((slot, var))
-            if not has_any:
-                ttk.Label(panel, text="(none)", foreground="#999",
-                          font=("", 8)).pack(padx=3, pady=2)
-
-        # fire groups: a compact aligned table (6 toggles don't fit the body panels)
-        if self.slot_widgets:
-            ttk.Separator(content, orient="horizontal").pack(fill="x", padx=10, pady=8)
-            ttk.Label(content, text="Fire groups", font=("", 10, "bold")).pack(anchor="w", padx=10)
-            fgf = ttk.Frame(content)
-            fgf.pack(fill="x", padx=10, pady=2)
-            ttk.Label(fgf, text="Weapon hardpoint", width=34).grid(row=0, column=0, sticky="w")
-            for g in range(1, 7):
-                ttk.Label(fgf, text=str(g), width=3).grid(row=0, column=g)
-            for i, (slot, var, gvars) in enumerate(self.slot_widgets, start=1):
-                loc = weapon_slot_location(slot.slot_id)
-                cls = slot.hardpoint_class or "?"
-                ttk.Label(fgf, width=34, anchor="w",
-                          text=f"{LOCATION_LABEL.get(loc, loc)} · {HARDPOINT_LABEL.get(cls, cls)}"
-                          ).grid(row=i, column=0, sticky="w", pady=1)
-                for gi, gv in enumerate(gvars, start=1):
-                    ttk.Checkbutton(fgf, variable=gv).grid(row=i, column=gi)
+        # container rebuilt when the view is switched (vars persist, so do edits)
+        self.loadout_frame = ttk.Frame(content)
+        self.loadout_frame.pack(fill="x")
+        self._render_loadout()
 
         # armor
         ttk.Separator(content, orient="horizontal").pack(fill="x", padx=10, pady=8)
@@ -1257,6 +1223,130 @@ class LoadoutDialog(tk.Toplevel):
                 canvas.unbind_all(seq)
             except tk.TclError:
                 pass
+
+    # -- loadout views -----------------------------------------------------
+    def _switch_view(self):
+        LoadoutDialog._last_mode = self.view_mode.get()
+        self._render_loadout()
+
+    def _render_loadout(self):
+        for w in self.loadout_frame.winfo_children():
+            w.destroy()
+        if self.view_mode.get() == "list":
+            self._render_list_view()
+        else:
+            self._render_body_view()
+
+    def _group_by_location(self):
+        wloc, eloc = {}, {}
+        for sw in self.slot_widgets:
+            wloc.setdefault(weapon_slot_location(sw[0].slot_id), []).append(sw)
+        for ew in self.eq_widgets:
+            eloc.setdefault(ew[0].part_label, []).append(ew)
+        return wloc, eloc
+
+    def _fill_panel(self, parent, sws, ews):
+        for slot, var, _gvars in sws:
+            cls = slot.hardpoint_class or "?"
+            row = ttk.Frame(parent)
+            row.pack(fill="x", padx=3, pady=1)
+            ttk.Label(row, text=HARDPOINT_LABEL.get(cls, cls), width=9, font=("", 8)).pack(side="left")
+            ttk.Combobox(row, textvariable=var, values=self._weapon_options(slot),
+                         width=15, state="readonly").pack(side="left")
+        for slot, var in ews:
+            kind = "Jump Jet" if "JumpJet" in slot.slot_type else "Gear"
+            row = ttk.Frame(parent)
+            row.pack(fill="x", padx=3, pady=1)
+            ttk.Label(row, text=kind, width=9, font=("", 8)).pack(side="left")
+            ttk.Combobox(row, textvariable=var, values=self._equip_names(slot),
+                         width=15, state="readonly").pack(side="left")
+        if not sws and not ews:
+            ttk.Label(parent, text="(none)", foreground="#999", font=("", 8)).pack(padx=3, pady=2)
+
+    def _render_body_view(self):
+        f = self.loadout_frame
+        ttk.Label(f, text="Loadout — by body location  (pick a weapon/equipment per slot)",
+                  font=("", 10, "bold")).pack(anchor="w", padx=10, pady=(8, 2))
+        wloc, eloc = self._group_by_location()
+        pd = ttk.Frame(f)
+        pd.pack(padx=10, pady=2)
+        POS = {"Head": (0, 2), "LeftArm": (1, 0), "LeftTorso": (1, 1),
+               "CenterTorso": (1, 2), "RightTorso": (1, 3), "RightArm": (1, 4),
+               "LeftLeg": (2, 1), "RightLeg": (2, 3)}
+        for loc, (rr, cc) in POS.items():
+            panel = ttk.LabelFrame(pd, text=LOCATION_LABEL.get(loc, loc))
+            panel.grid(row=rr, column=cc, padx=3, pady=3, sticky="nsew")
+            self._fill_panel(panel, wloc.get(loc, []), eloc.get(loc, []))
+        # any hardpoints/equipment outside the standard 8 locations (modded mechs)
+        others = [l for l in (list(wloc) + list(eloc)) if l not in POS]
+        others = list(dict.fromkeys(others))
+        if others:
+            op = ttk.LabelFrame(f, text="Other hardpoints")
+            op.pack(fill="x", padx=10, pady=(8, 2))
+            for loc in others:
+                ttk.Label(op, text=LOCATION_LABEL.get(loc, loc),
+                          font=("", 9, "bold")).pack(anchor="w", padx=4, pady=(4, 0))
+                self._fill_panel(op, wloc.get(loc, []), eloc.get(loc, []))
+        self._render_fire_groups(f)
+
+    def _render_fire_groups(self, parent):
+        if not self.slot_widgets:
+            return
+        ttk.Separator(parent, orient="horizontal").pack(fill="x", padx=10, pady=8)
+        ttk.Label(parent, text="Fire groups", font=("", 10, "bold")).pack(anchor="w", padx=10)
+        fgf = ttk.Frame(parent)
+        fgf.pack(fill="x", padx=10, pady=2)
+        ttk.Label(fgf, text="Weapon hardpoint", width=34).grid(row=0, column=0, sticky="w")
+        for g in range(1, 7):
+            ttk.Label(fgf, text=str(g), width=3).grid(row=0, column=g)
+        for i, (slot, _var, gvars) in enumerate(self.slot_widgets, start=1):
+            loc = weapon_slot_location(slot.slot_id)
+            cls = slot.hardpoint_class or "?"
+            ttk.Label(fgf, width=34, anchor="w",
+                      text=f"{LOCATION_LABEL.get(loc, loc)} · {HARDPOINT_LABEL.get(cls, cls)}"
+                      ).grid(row=i, column=0, sticky="w", pady=1)
+            for gi, gv in enumerate(gvars, start=1):
+                ttk.Checkbutton(fgf, variable=gv).grid(row=i, column=gi)
+
+    def _render_list_view(self):
+        """Dense, one-row-per-hardpoint view with inline fire groups. Renders
+        every slot (good for heavily-modded mechs with many hardpoints)."""
+        f = self.loadout_frame
+        ttk.Label(f, text="Loadout — all hardpoints",
+                  font=("", 10, "bold")).pack(anchor="w", padx=10, pady=(8, 2))
+        grid = ttk.Frame(f)
+        grid.pack(fill="x", padx=10)
+        ttk.Label(grid, text="Hardpoint / Equipment", width=34).grid(row=0, column=0, sticky="w")
+        ttk.Label(grid, text="Fitted", width=24).grid(row=0, column=1, sticky="w")
+        for g in range(1, 7):
+            ttk.Label(grid, text=str(g), width=3).grid(row=0, column=1 + g)
+        wloc, eloc = self._group_by_location()
+        ordered = [l for l in LOCATION_ORDER if l in wloc or l in eloc]
+        ordered += [l for l in (list(wloc) + list(eloc))
+                    if l not in LOCATION_ORDER and l not in ordered]
+        ordered = list(dict.fromkeys(ordered))
+        r = 1
+        for loc in ordered:
+            ttk.Label(grid, text=LOCATION_LABEL.get(loc, loc), font=("", 9, "bold")).grid(
+                row=r, column=0, columnspan=8, sticky="w", pady=(8, 1))
+            r += 1
+            for slot, var, gvars in wloc.get(loc, []):
+                cls = slot.hardpoint_class or "?"
+                ttk.Label(grid, text=f"    {HARDPOINT_LABEL.get(cls, cls)}", width=34).grid(
+                    row=r, column=0, sticky="w", pady=1)
+                ttk.Combobox(grid, textvariable=var, values=self._weapon_options(slot),
+                             width=22, state="readonly").grid(row=r, column=1, sticky="w", padx=2)
+                for gi, gv in enumerate(gvars, start=1):
+                    ttk.Checkbutton(grid, variable=gv).grid(row=r, column=1 + gi)
+                r += 1
+            for slot, var in eloc.get(loc, []):
+                kind = "Jump Jet" if "JumpJet" in slot.slot_type else "Gear"
+                ttk.Label(grid, text=f"    [{kind}]", width=34).grid(
+                    row=r, column=0, sticky="w", pady=1)
+                ttk.Combobox(grid, textvariable=var, values=self._equip_names(slot),
+                             width=22, state="readonly").grid(row=r, column=1, columnspan=6,
+                                                              sticky="w", padx=2)
+                r += 1
 
     def _refresh_traits(self):
         self.mtrait_list.delete(0, "end")

@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.13.1
+- **Fix (regression in 1.13.0):** the Edit Loadout screen no longer hides hardpoints or
+  equipment that fall outside the 8 standard body locations. On heavily-modded mechs (e.g.
+  YAML with extra crit slots) some weapons — and their fire groups — were not showing. The
+  editor now renders **every** hardpoint, with any non-standard ones under an "Other
+  hardpoints" section.
+- **New: Body / List view toggle in Edit Loadout.** "Body" is the silhouette layout;
+  "List" shows every hardpoint in one dense column with inline fire groups — best for mechs
+  that use a lot of slots. Your selection is kept when switching views.
+- **Fix:** ECM (`MWECMDataAsset`) is now recognised, so ECM/ECCM you own (including
+  mod-added types) shows up in the equipment lists.
+
 ## v1.13.0
 - **Visual overhaul of the Mechs tab.** The mech bay is now a list of **cards** with a
   weight-class icon, the mech's name, tonnage, Active Bay / Cold Storage location, and a
