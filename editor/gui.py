@@ -73,7 +73,7 @@ def weapon_slot_location(slot_id: str) -> str:
     return part or "Other"
 
 
-APP_VERSION = "1.14.3"
+APP_VERSION = "1.14.4"
 
 DEFAULT_SAVE_DIR = os.path.expandvars(
     r"%LOCALAPPDATA%\MW5Mercs\Saved\SaveGames"
@@ -1169,9 +1169,12 @@ class LoadoutDialog(tk.Toplevel):
             self._by_class[cls].sort()
 
         # equipment options by slot type
-        self._jumpjets = sorted((n, t) for n, t in equipment if t == "MWJumpJetDataAsset")
-        self._general_equip = sorted([(n, t) for n, t in equipment
-                                      if t != "MWJumpJetDataAsset"] + list(ammo))
+        # Every equipment slot can list every equipment type. Filtering options by
+        # slot type used to hide valid gear -- notably jump jets, which on modded
+        # (e.g. YAML) mechs sit in general/omni crit slots, not "JumpJet" slots, so
+        # they never appeared. The slot label still shows its kind; the game
+        # enforces what actually fits.
+        self._all_equip = sorted(set(tuple(x) for x in equipment) | set(tuple(x) for x in ammo))
 
         self.slots = mech.weapon_slots()
         self.eq_slots = mech.equipment_slots()
@@ -1192,7 +1195,7 @@ class LoadoutDialog(tk.Toplevel):
         self._build()
 
     def _equip_options(self, slot_type):
-        return self._jumpjets if "JumpJet" in slot_type else self._general_equip
+        return self._all_equip
 
     def _weapon_options(self, slot):
         cls = slot.hardpoint_class or "?"
@@ -1477,7 +1480,7 @@ class LoadoutDialog(tk.Toplevel):
             for g in range(1, 7):
                 slot.set_group(g, gvars[g - 1].get())
         # equipment
-        ename_to_type = {n: t for n, t in (self._jumpjets + self._general_equip)}
+        ename_to_type = {n: t for n, t in self._all_equip}
         for slot, var in self.eq_widgets:
             choice = var.get()
             if choice == "(empty)":

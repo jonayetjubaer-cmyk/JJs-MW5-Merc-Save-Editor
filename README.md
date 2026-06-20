@@ -204,6 +204,12 @@ identical to the original.** `editor/test_roundtrip.py` and the model sweep in
 
 ## 📝 Changelog
 
+**v1.14.4**
+- **Fix:** Edit Loadout now lists every equipment type in every equipment slot
+  (jump jets, Active Probe, ECM, MASC, heat sinks, ammo, armor/structure upgrades).
+  Slot-type filtering had been hiding gear like jump jets and Active Probes on
+  modded mechs. (issue #5)
+
 **v1.14.3**
 - **Reset to Stock** — reset any mech to its chassis's factory-stock loadout (armor,
   weapons, weapon groups, equipment).

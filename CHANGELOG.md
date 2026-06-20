@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.14.4
+- **Fix: every equipment type is now selectable in Edit Loadout.** Equipment slots used to
+  filter their dropdown by slot type, which hid valid gear — most notably jump jets and
+  Active Probes (ECCM), which on modded mechs (e.g. YAML with flexible crit slots) sit in
+  general/omni slots rather than dedicated ones. Each equipment slot now lists every
+  equipment type (jump jets, Active Probe/BAP, ECM, MASC, heat sinks, ammo, armor/structure
+  upgrades). (issue #5, reported by TimeDiver0)
+
 ## v1.14.3
 - **Reset to Stock.** A new button on the Mechs tab resets the selected mech to its
   chassis's factory-stock loadout (armor, weapons, weapon groups, equipment), using the
