@@ -781,6 +781,39 @@ class Mech:
         mpe.decoded.count = len(parts)
         return True
 
+    def export_loadout(self) -> dict:
+        """Read this mech's current loadout into a template-shaped dict
+        (weapons, groups, equipment, armor, rearArmor, structure) -- the same
+        shape apply_stock_template / apply_stock_equipment consume, so a saved
+        loadout can be re-applied to another mech."""
+        weapons = [{"slot": w.slot_id, "type": w.weapon_type, "name": w.weapon_name}
+                   for w in self.weapon_slots()]
+        groups = []
+        for w in self.weapon_slots():
+            gs = w.groups()
+            groups.append({"slot": w.slot_id, "g": [i in gs for i in range(1, 7)]})
+        eqmap = {}
+        for e in self.equipment_slots():
+            sid = e.element.get("SlotId")
+            eqmap.setdefault(e.mech_part, []).append({
+                "type": e.equip_type, "name": e.equip_name,
+                "slotId": read_int(sid.raw_payload) if sid else 0,
+                "slotType": e.slot_type})
+        equipment = [{"part": k, "items": v} for k, v in eqmap.items()]
+        armor = {loc: self.armor_value(loc, installed=True) for loc in ARMOR_PARTS}
+        rear = {loc[:-4]: self.armor_value(loc, installed=True) for loc in REAR_PARTS}
+        struct = {}
+        ld = self._loadout()
+        cs = ld.decoded.get("CurrentStructure") if ld and ld.decoded else None
+        if cs is not None and cs.decoded is not None:
+            for loc in ARMOR_PARTS:
+                p = cs.decoded.get(loc)
+                if p is not None:
+                    struct[loc] = read_float(p.raw_payload)
+        return {"chassis": self.chassis, "weapons": weapons, "groups": groups,
+                "equipment": equipment, "armor": armor, "rearArmor": rear,
+                "structure": struct}
+
     def flush(self):
         """Re-serialize the nested archive back into the ByteData payload."""
         w = Writer()
@@ -1449,6 +1482,44 @@ class SaveFile:
             storage.elements.append(slot)
             storage.count += 1
         return new_guid, status
+
+    def export_mech_loadout(self, mech: "Mech", path: str) -> dict:
+        """Write a single mech's loadout to a portable .mw5loadout file."""
+        data = mech.export_loadout()
+        data["format"] = "mw5loadout"
+        data["version"] = 1
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+        return data
+
+    def import_mech_loadout(self, mech: "Mech", path: str) -> str:
+        """Apply a saved .mw5loadout onto a mech (overwrites its loadout).
+        Returns the chassis the loadout was exported from (for a mismatch
+        warning). Best used on the same chassis -- the hardpoint ids must match."""
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        if data.get("format") != "mw5loadout":
+            raise ValueError("Not a MW5 loadout file.")
+        we, ge, pe, ie = self._loadout_scaffolds()
+        mech.apply_stock_template(data, we, ge)
+        if not mech.apply_stock_equipment(data, pe, ie):
+            mech.strip_equipment()
+        mech.flush()
+        return data.get("chassis", "")
+
+    def reset_mech_to_stock(self, mech: "Mech") -> bool:
+        """Reset an existing mech to its chassis's factory-stock loadout (armor,
+        structure, weapons, weapon groups, equipment) from the stock template.
+        Returns False if there's no template for the chassis."""
+        tpl = stock_template(mech.chassis)
+        if tpl is None:
+            return False
+        we, ge, pe, ie = self._loadout_scaffolds()
+        mech.apply_stock_template(tpl, we, ge)
+        if not mech.apply_stock_equipment(tpl, pe, ie):
+            mech.strip_equipment()
+        mech.flush()
+        return True
 
     def remove_mech(self, guid: bytes):
         wrappers = self._wrappers_array()

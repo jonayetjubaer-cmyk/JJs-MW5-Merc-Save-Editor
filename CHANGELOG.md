@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.14.3
+- **Reset to Stock.** A new button on the Mechs tab resets the selected mech to its
+  chassis's factory-stock loadout (armor, weapons, weapon groups, equipment), using the
+  same stock data added in v1.14.0. Handy for undoing a botched loadout.
+- **Export / Import Loadout.** Save a single mech's loadout to a small `.mw5loadout` file
+  and apply it to another mech (best on the same chassis), without exporting the whole
+  mech. Good for reusing a custom build across mechs or saves.
+
 ## v1.14.0
 - **Added mechs now come out as the real factory-stock variant.** When you add a chassis
   you don't own, the editor builds it from that chassis's actual game data — correct stock

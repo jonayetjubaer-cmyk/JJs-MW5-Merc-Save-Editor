@@ -204,6 +204,12 @@ identical to the original.** `editor/test_roundtrip.py` and the model sweep in
 
 ## 📝 Changelog
 
+**v1.14.3**
+- **Reset to Stock** — reset any mech to its chassis's factory-stock loadout (armor,
+  weapons, weapon groups, equipment).
+- **Export / Import Loadout** — save a single mech's loadout to a `.mw5loadout` file
+  and apply it to another mech (best on the same chassis).
+
 **v1.14.0**
 - **Added mechs are now real stock variants.** Add a chassis you don't own and the
   editor builds it from the game's actual data — correct armor, structure, weapons,

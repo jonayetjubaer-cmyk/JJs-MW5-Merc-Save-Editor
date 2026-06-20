@@ -73,7 +73,7 @@ def weapon_slot_location(slot_id: str) -> str:
     return part or "Other"
 
 
-APP_VERSION = "1.14.0"
+APP_VERSION = "1.14.3"
 
 DEFAULT_SAVE_DIR = os.path.expandvars(
     r"%LOCALAPPDATA%\MW5Mercs\Saved\SaveGames"
@@ -176,6 +176,9 @@ class EditorApp(tk.Tk):
         ttk.Button(side, text="Change Chassis…", command=self.on_change_chassis).pack(fill="x", pady=2)
         ttk.Button(side, text="Repair (full armor)", command=self.on_repair).pack(fill="x", pady=2)
         ttk.Button(side, text="Repair ALL Mechs", command=self.on_repair_all).pack(fill="x", pady=2)
+        ttk.Button(side, text="Reset to Stock", command=self.on_reset_to_stock).pack(fill="x", pady=2)
+        ttk.Button(side, text="Export Loadout…", command=self.on_export_loadout).pack(fill="x", pady=2)
+        ttk.Button(side, text="Import Loadout…", command=self.on_import_loadout).pack(fill="x", pady=2)
         ttk.Button(side, text="Remove", command=self.on_remove_mech).pack(fill="x", pady=2)
 
     # -- mech-bay cards ----------------------------------------------------
@@ -769,6 +772,79 @@ class EditorApp(tk.Tk):
             n += 1
         self.status.set(f"Repaired all {n} mechs (armor restored to installed). Remember to Save.")
         messagebox.showinfo("Repair All", f"Restored armor on {n} mechs.")
+
+    def on_reset_to_stock(self):
+        if not self._guard():
+            return
+        idx = self._selected_mech_index()
+        if idx is None:
+            return self._need_selection()
+        m = self._selected_mech()
+        label = mech_display(m.chassis)
+        if not messagebox.askyesno(
+                "Reset to stock",
+                f"Reset {label} to its factory-stock loadout?\n\n"
+                "This replaces its armor, weapons, weapon groups and equipment with "
+                "the chassis's stock configuration. Any custom loadout is overwritten."):
+            return
+        try:
+            if self.save.reset_mech_to_stock(m):
+                self._refresh_mechs()
+                self.status.set(f"Reset {label} to stock loadout. Remember to Save.")
+            else:
+                messagebox.showinfo(
+                    "No stock data",
+                    f"There's no stock template for {label} (it may be a modded or "
+                    "non-standard chassis), so it can't be reset to stock.")
+        except Exception as e:
+            self._error("Failed to reset to stock", e)
+
+    def on_export_loadout(self):
+        if not self._guard():
+            return
+        if self._selected_mech_index() is None:
+            return self._need_selection()
+        m = self._selected_mech()
+        path = filedialog.asksaveasfilename(
+            title="Export loadout", defaultextension=".mw5loadout",
+            initialfile=f"{variant_code(m.chassis)}.mw5loadout",
+            filetypes=[("MW5 loadout", "*.mw5loadout"), ("All files", "*.*")])
+        if not path:
+            return
+        try:
+            self.save.export_mech_loadout(m, path)
+            self.status.set(f"Exported {mech_display(m.chassis)} loadout to {os.path.basename(path)}.")
+        except Exception as e:
+            self._error("Failed to export loadout", e)
+
+    def on_import_loadout(self):
+        if not self._guard():
+            return
+        if self._selected_mech_index() is None:
+            return self._need_selection()
+        m = self._selected_mech()
+        path = filedialog.askopenfilename(
+            title="Import loadout",
+            filetypes=[("MW5 loadout", "*.mw5loadout"), ("All files", "*.*")])
+        if not path:
+            return
+        if not messagebox.askyesno(
+                "Import loadout",
+                f"Apply this loadout to {mech_display(m.chassis)}?\n\nThis overwrites its "
+                "current weapons, equipment and armor. Loadouts are meant for the same chassis."):
+            return
+        try:
+            src = self.save.import_mech_loadout(m, path)
+            self._refresh_mechs()
+            if src and variant_code(src) != variant_code(m.chassis):
+                messagebox.showwarning(
+                    "Different chassis",
+                    f"That loadout was exported from {mech_display(src)}, but you applied it to "
+                    f"{mech_display(m.chassis)}. The hardpoints may not match — check it in Edit "
+                    "Loadout or the in-game Mech Lab.")
+            self.status.set(f"Imported loadout onto {mech_display(m.chassis)}. Remember to Save.")
+        except Exception as e:
+            self._error("Failed to import loadout", e)
 
     def on_remove_mech(self):
         idx = self._selected_mech_index()
