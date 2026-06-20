@@ -59,6 +59,7 @@ jobs:
             --windows-icon-from-ico=editor/app_icon.ico `
             --include-data-files=editor/app_icon.ico=app_icon.ico `
             --include-data-files=editor/app_icon.png=app_icon.png `
+            --include-data-files=editor/stock_templates.json.gz=stock_templates.json.gz `
             --assume-yes-for-downloads `
             --output-dir=build_out --output-filename=JJsaveEditor.exe `
             editor/gui.py

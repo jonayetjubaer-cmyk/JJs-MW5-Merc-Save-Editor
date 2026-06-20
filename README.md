@@ -204,6 +204,15 @@ identical to the original.** `editor/test_roundtrip.py` and the model sweep in
 
 ## 📝 Changelog
 
+**v1.14.0**
+- **Added mechs are now real stock variants.** Add a chassis you don't own and the
+  editor builds it from the game's actual data — correct armor, structure, weapons,
+  weapon groups, and equipment (heat sinks, the right jump-jet class, ammo, ECM) —
+  instead of an approximate clone. Fixes the wrong armor, phantom jump jets, and
+  wrong tonnage. Works for the active bay and cold storage, all 554 chassis. (Stock
+  mech data contributed by **FiendishDrWu** in issue #6 — thank you!)
+- More equipment types recognised: Beagle Active Probe and Targeting Computer.
+
 **v1.13.1**
 - **Fix:** Edit Loadout no longer hides hardpoints/equipment outside the 8 standard
   body locations (a 1.13.0 regression that hid weapons and fire groups on heavily

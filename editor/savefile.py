@@ -29,6 +29,7 @@ from ue_property import (
     Reader, Writer, read_property_list, write_property_list,
     Property, PropertyList, ArrayValue,
 )
+from stock_templates import stock_template
 
 
 # ---------------------------------------------------------------------------
@@ -220,6 +221,47 @@ def _set_bool(prop: Property, value: bool):
     hdr = bytearray(prop.raw_header)
     hdr[8] = 1 if value else 0
     prop.raw_header = bytes(hdr)
+
+
+# -- stock-template element setters (operate on cloned scaffold elements) -----
+
+def _set_weapon_slot_element(el: PropertyList, slot_id: str, wtype: str, wname: str):
+    """Overwrite a cloned InstalledWeapons element's hardpoint id and weapon."""
+    sid = el.get("HardpointSlotID")
+    if sid is not None:
+        _set_leaf(sid, write_fstring_payload(slot_id))
+    tp = _path(el, "WeaponData", "WeaponId", "ID", "PrimaryAssetType", "Name")
+    nm = _path(el, "WeaponData", "WeaponId", "ID", "PrimaryAssetName")
+    if tp is not None:
+        _set_leaf(tp, write_fstring_payload(wtype))
+    if nm is not None:
+        _set_leaf(nm, write_fstring_payload(wname))
+
+
+def _set_group_element(el: PropertyList, slot_id: str, bools):
+    """Overwrite a cloned WeaponGroups element's hardpoint id and group flags."""
+    sid = el.get("HardpointSlotID")
+    if sid is not None:
+        _set_leaf(sid, write_fstring_payload(slot_id))
+    for i in range(1, 7):
+        _set_bool(el.get(f"bWeaponGroup{i}"), bool(bools[i - 1]) if i - 1 < len(bools) else False)
+
+
+def _set_equip_item_element(el: PropertyList, etype, ename, slot_id_int, slot_type_name):
+    """Overwrite a cloned SlottedEquipment element (SlotId / SlotTypeAssetId /
+    EquipmentData) with a stock-template equipment item."""
+    sid = el.get("SlotId")
+    if sid is not None:
+        _set_leaf(sid, write_int(int(slot_id_int)))
+    tp = _path(el, "EquipmentData", "EquipmentId", "ID", "PrimaryAssetType", "Name")
+    nm = _path(el, "EquipmentData", "EquipmentId", "ID", "PrimaryAssetName")
+    if tp is not None:
+        _set_leaf(tp, write_fstring_payload(etype))
+    if nm is not None:
+        _set_leaf(nm, write_fstring_payload(ename))
+    stp = _path(el, "SlotTypeAssetId", "ID", "PrimaryAssetName")
+    if stp is not None and slot_type_name:
+        _set_leaf(stp, write_fstring_payload(slot_type_name))
 
 
 class WeaponSlot:
@@ -639,6 +681,105 @@ class Mech:
                 it.decoded.inner_struct_name = "MechTraitDataAssetId"
             ld.decoded.properties.append(it)
         return it.decoded if (it.decoded is not None and hasattr(it.decoded, "elements")) else None
+
+    # -- stock template (factual game data, issue #6) ----------------------
+    def _apply_stock_armor(self, tpl):
+        armor = tpl.get("armor", {})
+        rear = tpl.get("rearArmor", {})
+        struct = tpl.get("structure", {})
+        for loc in ARMOR_PARTS:
+            v = armor.get(loc)
+            if v is not None:
+                self.set_armor(loc, float(v), installed=True)
+                self.set_armor(loc, float(v), installed=False)
+        for loc in REAR_PARTS:
+            v = rear.get(loc[:-4])  # 'CenterTorsoRear' -> 'CenterTorso' (template key)
+            if v is not None:
+                self.set_armor(loc, float(v), installed=True)
+                self.set_armor(loc, float(v), installed=False)
+        ld = self._loadout()
+        cs = ld.decoded.get("CurrentStructure") if ld and ld.decoded else None
+        if cs is not None and cs.decoded is not None:
+            for loc in ARMOR_PARTS:
+                v = struct.get(loc)
+                p = cs.decoded.get(loc)
+                if v is not None and p is not None:
+                    p.raw_payload = write_float(float(v))
+
+    def apply_stock_template(self, tpl, weap_scaffold, group_scaffold):
+        """Populate this mech's loadout from a stock template: set stock armor /
+        structure and rebuild InstalledWeapons + WeaponGroups to the chassis's
+        stock weapons. Each array element is a deep copy of a real scaffold
+        element with only its hardpoint id + weapon/flags overwritten, so the
+        UE structure stays valid. Returns True if applied."""
+        ld = self._loadout()
+        if ld is None or ld.decoded is None:
+            return False
+        ldd = ld.decoded
+        self._apply_stock_armor(tpl)
+
+        iw = ldd.get("InstalledWeapons")
+        if iw is not None and iw.decoded is not None and hasattr(iw.decoded, "elements") \
+                and weap_scaffold is not None:
+            elems = []
+            for wp in tpl.get("weapons", []):
+                e = copy.deepcopy(weap_scaffold)
+                _set_weapon_slot_element(e, wp.get("slot", ""),
+                                         wp.get("type", "None"), wp.get("name", "None"))
+                elems.append(e)
+            iw.decoded.elements = elems
+            iw.decoded.count = len(elems)
+
+        wgi = ldd.get("WeaponGroupInfo")
+        if wgi is not None and wgi.decoded is not None:
+            wg = wgi.decoded.get("WeaponGroups")
+            if wg is not None and wg.decoded is not None and hasattr(wg.decoded, "elements") \
+                    and group_scaffold is not None:
+                gelems = []
+                for g in tpl.get("groups", []):
+                    e = copy.deepcopy(group_scaffold)
+                    _set_group_element(e, g.get("slot", ""), g.get("g", []))
+                    gelems.append(e)
+                wg.decoded.elements = gelems
+                wg.decoded.count = len(gelems)
+            cfg = wgi.decoded.get("ChainFireGroups")
+            if cfg is not None and cfg.decoded is not None and hasattr(cfg.decoded, "elements"):
+                cfg.decoded.elements = []
+                cfg.decoded.count = 0
+        return True
+
+    def apply_stock_equipment(self, tpl, part_scaffold, item_scaffold):
+        """Rebuild Equipment.MechPartEquipment from the stock template so the
+        mech carries its chassis's real stock gear (heat sinks, jump jets, ammo,
+        ECM, etc.) instead of the donor's. Each part/item is a deep copy of a
+        real scaffold element with only its leaf values overwritten."""
+        if part_scaffold is None or item_scaffold is None:
+            return False
+        ld = self._loadout()
+        eq = ld.decoded.get("Equipment") if ld and ld.decoded else None
+        mpe = eq.decoded.get("MechPartEquipment") if eq and eq.decoded else None
+        if mpe is None or mpe.decoded is None or not hasattr(mpe.decoded, "elements"):
+            return False
+        parts = []
+        for tp_part in tpl.get("equipment", []):
+            pe = copy.deepcopy(part_scaffold)
+            mp = pe.get("MechPart")
+            if mp is not None:
+                _set_leaf(mp, write_fstring_payload(tp_part.get("part", "")))
+            se = pe.get("SlottedEquipment")
+            if se is not None and se.decoded is not None and hasattr(se.decoded, "elements"):
+                items = []
+                for it in tp_part.get("items", []):
+                    ie = copy.deepcopy(item_scaffold)
+                    _set_equip_item_element(ie, it.get("type", "None"), it.get("name", "None"),
+                                            it.get("slotId", 0), it.get("slotType", ""))
+                    items.append(ie)
+                se.decoded.elements = items
+                se.decoded.count = len(items)
+            parts.append(pe)
+        mpe.decoded.elements = parts
+        mpe.decoded.count = len(parts)
+        return True
 
     def flush(self):
         """Re-serialize the nested archive back into the ByteData payload."""
@@ -1093,7 +1234,7 @@ class SaveFile:
                     "MWMissileWeaponDataAsset", "MWMeleeWeaponDataAsset",
                     "MWAMSWeaponDataAsset"}
         EQUIP_T = {"MWHeatSinkDataAsset", "MWJumpJetDataAsset", "MWMASCDataAsset",
-                   "MWECMDataAsset"}
+                   "MWECMDataAsset", "MWBAPDataAsset", "MWTargetingComputerDataAsset"}
         out = {"weapon": set(), "equipment": set(), "ammo": set()}
 
         def scan(pl, depth=0):
@@ -1170,6 +1311,44 @@ class SaveFile:
             self._mlt_tmpl = tmpl
         return self._mlt_tmpl
 
+    def _loadout_scaffolds(self):
+        """Deep-copyable scaffold elements harvested from any mech, used to
+        rebuild a stock loadout: (weapon element, weapon-group element,
+        equipment-part element, equipment-item element). Any may be None if no
+        mech in the save provides that structure. Cached."""
+        if getattr(self, "_ld_scaffold", "_") == "_":
+            we = ge = pe = ie = None
+            for m in self._all_mechs():
+                ld = _path(m.market_item.decoded, "Item", "ItemData")
+                if ld is None or ld.decoded is None:
+                    continue
+                iw = ld.decoded.get("InstalledWeapons")
+                if we is None and iw is not None and iw.decoded is not None \
+                        and getattr(iw.decoded, "elements", None):
+                    we = copy.deepcopy(iw.decoded.elements[0])
+                wgi = ld.decoded.get("WeaponGroupInfo")
+                if ge is None and wgi is not None and wgi.decoded is not None:
+                    wg = wgi.decoded.get("WeaponGroups")
+                    if wg is not None and wg.decoded is not None \
+                            and getattr(wg.decoded, "elements", None):
+                        ge = copy.deepcopy(wg.decoded.elements[0])
+                eq = ld.decoded.get("Equipment")
+                mpe = eq.decoded.get("MechPartEquipment") if eq and eq.decoded else None
+                if mpe is not None and mpe.decoded is not None and getattr(mpe.decoded, "elements", None):
+                    if pe is None:
+                        pe = copy.deepcopy(mpe.decoded.elements[0])
+                    if ie is None:
+                        for pel in mpe.decoded.elements:
+                            se = pel.get("SlottedEquipment")
+                            if se is not None and se.decoded is not None \
+                                    and getattr(se.decoded, "elements", None):
+                                ie = copy.deepcopy(se.decoded.elements[0])
+                                break
+                if we is not None and ge is not None and pe is not None and ie is not None:
+                    break
+            self._ld_scaffold = (we, ge, pe, ie)
+        return self._ld_scaffold
+
     def add_mech(self, chassis: str | None = None, *, donor_index: int = 0,
                  repair: bool = True, location: str = "active") -> tuple[bytes, str]:
         """Add a mech, returning (new_guid, status).
@@ -1194,20 +1373,15 @@ class SaveFile:
         status = "approx"
         cold = (location == "cold")
 
-        # Pick a donor of the matching kind: a cold-storage wrapper for a cold
-        # add (correct structure already), else an active-bay wrapper.
+        # Always clone an ACTIVE-bay donor: only active mechs carry the full
+        # ItemData (InstalledWeapons, Equipment) we populate from. Cold-storage
+        # records can omit those arrays, so they're useless as donors. For a cold
+        # add we add the ColdStorageLoadout marker afterward (set_cold_storage).
         src_index = donor_index
         for i, el in enumerate(wrappers.elements):
-            lt = self._mech_from_element(el).loadout_type
-            if (cold and lt == COLD_STORAGE_LOADOUT_TYPE) or (not cold and lt == ""):
+            if self._mech_from_element(el).is_owned:
                 src_index = i
                 break
-        else:
-            # no donor of the preferred kind; fall back to any owned (active) mech
-            for i, el in enumerate(wrappers.elements):
-                if self._mech_from_element(el).is_owned:
-                    src_index = i
-                    break
 
         want = (chassis if chassis.endswith("_MDA") else chassis + "_MDA") if chassis else None
 
@@ -1230,23 +1404,32 @@ class SaveFile:
         else:
             if chassis:
                 mech.chassis = chassis
-            if repair:
-                mech.repair()
-            # If the save has a REAL layout for this chassis (from a market /
-            # mission record), use it so the mech gets correct hardpoints.
-            # Otherwise keep the donor's hardpoints, emptied (no stale groups).
-            layout = self.chassis_layouts().get(want) if want else None
-            if layout is not None and layout[0] is not None and \
-                    len(layout[0].elements) > mech.installed_weapon_count():
-                mech.apply_layout(*layout)
-                status = "real-layout"
+            tpl = stock_template(chassis) if chassis else None
+            if tpl is not None:
+                # Best: populate the chassis's REAL stock loadout (correct armor,
+                # structure, weapons, weapon groups and equipment) from the
+                # game-asset template, instead of an approximate clone of an
+                # unrelated donor.
+                we, ge, pe, ie = self._loadout_scaffolds()
+                mech.apply_stock_template(tpl, we, ge)
+                if not mech.apply_stock_equipment(tpl, pe, ie):
+                    mech.strip_equipment()   # couldn't populate; avoid donor's gear
+                status = "stock"
             else:
-                mech.strip_weapons()
-            # The donor's equipment (heat sinks, jump jets, ammo) belongs to the
-            # DONOR chassis, not the one we're cloning into -- carrying it over
-            # produces phantom gear (e.g. tonnage-eating jump jets that don't show
-            # in the Mech Lab). Strip it so the player fits gear from scratch.
-            mech.strip_equipment()
+                if repair:
+                    mech.repair()
+                # If the save has a REAL layout for this chassis, use it; else keep
+                # the donor's hardpoints emptied (no stale weapon groups).
+                layout = self.chassis_layouts().get(want) if want else None
+                if layout is not None and layout[0] is not None and \
+                        len(layout[0].elements) > mech.installed_weapon_count():
+                    mech.apply_layout(*layout)
+                    status = "real-layout"
+                else:
+                    mech.strip_weapons()
+                # The donor's equipment belongs to the donor chassis; carrying it
+                # over produces phantom gear (tonnage-eating jump jets, etc.).
+                mech.strip_equipment()
 
         # Normalise the wrapper to the requested location.
         if cold:

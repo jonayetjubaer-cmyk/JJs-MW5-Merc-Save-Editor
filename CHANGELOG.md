@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.14.0
+- **Added mechs now come out as the real factory-stock variant.** When you add a chassis
+  you don't own, the editor builds it from that chassis's actual game data — correct stock
+  armor, internal structure, weapons, weapon groups, **and** equipment (heat sinks, the
+  right class of jump jets, ammo, ECM, etc.) — instead of an approximate clone of an
+  unrelated mech. This fixes the wrong armor, the "invisible" jump jets, and the wrong
+  tonnage on added mechs. Works for both the active bay and cold storage, for all 554
+  chassis. (Stock mech data contributed by **FiendishDrWu** in GitHub issue #6 — thank you!)
+- **More equipment types recognised:** Beagle Active Probe (`MWBAPDataAsset`) and Targeting
+  Computer (`MWTargetingComputerDataAsset`), alongside the ECM added in 1.13.1.
+
 ## v1.13.1
 - **Fix (regression in 1.13.0):** the Edit Loadout screen no longer hides hardpoints or
   equipment that fall outside the 8 standard body locations. On heavily-modded mechs (e.g.

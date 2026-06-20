@@ -73,7 +73,7 @@ def weapon_slot_location(slot_id: str) -> str:
     return part or "Other"
 
 
-APP_VERSION = "1.13.1"
+APP_VERSION = "1.14.0"
 
 DEFAULT_SAVE_DIR = os.path.expandvars(
     r"%LOCALAPPDATA%\MW5Mercs\Saved\SaveGames"
@@ -647,7 +647,15 @@ class EditorApp(tk.Tk):
             _guid, status = self.save.add_mech(chassis, location=location)
             self._refresh_mechs()
             label = mech_display(chassis)
-            if status == "exact":
+            if status == "stock":
+                self.status.set(f"Added {label} to {where} — full stock loadout "
+                                "(weapons, armor, equipment). Remember to Save.")
+                messagebox.showinfo(
+                    "Mech added",
+                    f"Added a stock {label} to {where} with its real factory loadout: "
+                    "correct armor, weapons, weapon groups and equipment for that chassis. "
+                    "Ready to deploy, or tweak it in Edit Loadout / the in-game Mech Lab.")
+            elif status == "exact":
                 self.status.set(f"Added {label} to {where} — exact copy of one you own. Remember to Save.")
             elif status == "real-layout":
                 self.status.set(f"Added {label} to {where} with its real hardpoints (empty). "
