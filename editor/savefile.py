@@ -188,7 +188,8 @@ def hardpoint_class(slot_id: str) -> str | None:
     if "Melee" in slot_id:
         return "Melee"
     for tok in slot_id.split("_"):
-        m = _re.match(r"^([EBM])H\d+$", tok)
+        # E/B/M/A H<n>: energy, ballistic, missile, anti-missile (AMS) hardpoints
+        m = _re.match(r"^([EBMA])H\d+$", tok)
         if m:
             return m.group(1) + "H"
     return None
@@ -203,6 +204,8 @@ def weapon_class(asset_name: str, asset_type: str) -> str | None:
         return "MH"
     if asset_type == "MWMeleeWeaponDataAsset":
         return "Melee"
+    if asset_type == "MWAMSWeaponDataAsset":
+        return "AH"   # anti-missile system goes in an AMS hardpoint
     if asset_type == "MWTraceWeaponDataAsset":
         return "BH" if "MachineGun" in asset_name else "EH"
     if asset_type == "MWProjectileWeaponDataAsset":

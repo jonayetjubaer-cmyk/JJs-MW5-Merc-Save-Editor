@@ -37,7 +37,8 @@ from mech_catalog import LABELED, asset_name, display as mech_display, variant_c
 from item_catalog import CATALOG, CATEGORY_INVENTORY, WEAPONS, EQUIPMENT, AMMO
 from savefile import weapon_class, ARMOR_PARTS, REAR_PARTS
 
-HARDPOINT_LABEL = {"EH": "Energy", "BH": "Ballistic", "MH": "Missile", "Melee": "Melee"}
+HARDPOINT_LABEL = {"EH": "Energy", "BH": "Ballistic", "MH": "Missile",
+                   "AH": "Anti-Missile", "Melee": "Melee"}
 
 # Body locations in canonical Mech-Lab order, for grouping the loadout editor.
 LOCATION_ORDER = ["Head", "CenterTorso", "LeftTorso", "RightTorso",
@@ -73,7 +74,7 @@ def weapon_slot_location(slot_id: str) -> str:
     return part or "Other"
 
 
-APP_VERSION = "1.14.4"
+APP_VERSION = "1.14.5"
 
 DEFAULT_SAVE_DIR = os.path.expandvars(
     r"%LOCALAPPDATA%\MW5Mercs\Saved\SaveGames"
@@ -1160,7 +1161,7 @@ class LoadoutDialog(tk.Toplevel):
         ammo = cat.get("ammo", AMMO)
 
         # weapon options per hardpoint class (name list), from the catalog
-        self._by_class = {"EH": [], "BH": [], "MH": [], "Melee": []}
+        self._by_class = {"EH": [], "BH": [], "MH": [], "AH": [], "Melee": []}
         for name, atype in weapons:
             cls = weapon_class(name, atype)
             if cls in self._by_class:

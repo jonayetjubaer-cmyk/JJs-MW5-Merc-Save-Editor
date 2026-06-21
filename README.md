@@ -204,6 +204,13 @@ identical to the original.** `editor/test_roundtrip.py` and the model sweep in
 
 ## 📝 Changelog
 
+**v1.14.5**
+- **Fix:** AMS (Anti-Missile System) hardpoints are now editable in Edit Loadout —
+  they previously showed nothing selectable. (issue #7)
+- **Fix:** all DLC mechs now appear in the Add Mech list, including Chaos Reign and
+  the Clan rebuilds (Ebon Jaguar, Kodiak, Incubus, Sunder, etc.) that an older
+  catalog filter had dropped. (issue #8)
+
 **v1.14.4**
 - **Fix:** Edit Loadout now lists every equipment type in every equipment slot
   (jump jets, Active Probe, ECM, MASC, heat sinks, ammo, armor/structure upgrades).

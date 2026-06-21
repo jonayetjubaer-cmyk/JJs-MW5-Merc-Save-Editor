@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.14.5
+- **Fix: AMS hardpoints are now editable.** Anti-Missile System slots showed nothing
+  selectable in Edit Loadout (only the currently-mounted AMS), because AMS hardpoints
+  weren't recognised as a weapon class. They now offer AMS weapons like any other slot.
+  (issue #7, TimeDiver0)
+- **Fix: all DLC mechs are in the Add Mech list now.** Later-DLC and Clan chassis (Chaos
+  Reign, plus Ebon Jaguar, Kodiak, Incubus, Bushwacker, Naga, Night Gyr, Linebacker, the
+  Sunder, and the Clan "C" rebuilds) were missing because an earlier catalog filter used a
+  pre-DLC asset list. The roster is now the full game asset list (552 chassis), so any
+  chassis the game has can be added. (issue #8, eXFDA)
+
 ## v1.14.4
 - **Fix: every equipment type is now selectable in Edit Loadout.** Equipment slots used to
   filter their dropdown by slot type, which hid valid gear — most notably jump jets and
