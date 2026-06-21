@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.14.6
+- **Filter the mech list by location.** A new **Show: All / Active Bay / Cold Storage**
+  toggle at the top of the Mechs tab, handy when you have a lot of mechs in cold storage.
+- **Chain fire vs salvo per group.** Edit Loadout now shows a **Chain fire** toggle for
+  each fire group (1-6): on = the group's weapons fire one after another, off = salvo (all
+  at once). It's saved/restored and carried in exported `.mw5loadout` files. (issue #7)
+
 ## v1.14.5
 - **Fix: AMS hardpoints are now editable.** Anti-Missile System slots showed nothing
   selectable in Edit Loadout (only the currently-mounted AMS), because AMS hardpoints

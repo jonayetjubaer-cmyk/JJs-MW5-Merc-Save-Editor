@@ -784,6 +784,29 @@ class Mech:
         mpe.decoded.count = len(parts)
         return True
 
+    def _chain_fire_array(self):
+        wgi = _path(self.market_item.decoded, "Item", "ItemData", "WeaponGroupInfo")
+        cfg = wgi.decoded.get("ChainFireGroups") if wgi and wgi.decoded else None
+        return cfg.decoded if (cfg and cfg.decoded and hasattr(cfg.decoded, "elements")) else None
+
+    def chain_fire_groups(self):
+        """Per-group chain-fire flags [g1..g6]. True = that fire group chain-fires
+        (weapons fire one after another); False = salvo (all at once)."""
+        av = self._chain_fire_array()
+        if av is None:
+            return [False] * 6
+        return [bool(av.elements[i][0]) if i < len(av.elements) and av.elements[i] else False
+                for i in range(6)]
+
+    def set_chain_fire_group(self, n, on):
+        av = self._chain_fire_array()
+        if av is None or not (1 <= n <= 6):
+            return
+        while len(av.elements) < 6:
+            av.elements.append(b"\x00")
+        av.elements[n - 1] = b"\x01" if on else b"\x00"
+        av.count = len(av.elements)
+
     def export_loadout(self) -> dict:
         """Read this mech's current loadout into a template-shaped dict
         (weapons, groups, equipment, armor, rearArmor, structure) -- the same
@@ -815,7 +838,7 @@ class Mech:
                     struct[loc] = read_float(p.raw_payload)
         return {"chassis": self.chassis, "weapons": weapons, "groups": groups,
                 "equipment": equipment, "armor": armor, "rearArmor": rear,
-                "structure": struct}
+                "structure": struct, "chainFire": self.chain_fire_groups()}
 
     def flush(self):
         """Re-serialize the nested archive back into the ByteData payload."""
@@ -1507,6 +1530,8 @@ class SaveFile:
         mech.apply_stock_template(data, we, ge)
         if not mech.apply_stock_equipment(data, pe, ie):
             mech.strip_equipment()
+        for i, on in enumerate(data.get("chainFire", []), start=1):
+            mech.set_chain_fire_group(i, on)
         mech.flush()
         return data.get("chassis", "")
 

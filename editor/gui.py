@@ -74,7 +74,7 @@ def weapon_slot_location(slot_id: str) -> str:
     return part or "Other"
 
 
-APP_VERSION = "1.14.5"
+APP_VERSION = "1.14.6"
 
 DEFAULT_SAVE_DIR = os.path.expandvars(
     r"%LOCALAPPDATA%\MW5Mercs\Saved\SaveGames"
@@ -149,6 +149,15 @@ class EditorApp(tk.Tk):
 
         self.mech_count_var = tk.StringVar(value="")
         ttk.Label(mwrap, textvariable=self.mech_count_var).pack(anchor="w", pady=(0, 2))
+
+        # filter: show all mechs, only the active bay, or only cold storage
+        flt = ttk.Frame(mwrap)
+        flt.pack(anchor="w", pady=(0, 2))
+        ttk.Label(flt, text="Show:").pack(side="left")
+        self.mech_filter = tk.StringVar(value="all")
+        for txt, val in (("All", "all"), ("Active Bay", "active"), ("Cold Storage", "cold")):
+            ttk.Radiobutton(flt, text=txt, value=val, variable=self.mech_filter,
+                            command=self._refresh_mechs).pack(side="left", padx=2)
 
         cwrap = ttk.Frame(mwrap)
         cwrap.pack(fill="both", expand=True)
@@ -231,15 +240,15 @@ class EditorApp(tk.Tk):
             w.bind("<Button-1>", lambda e, i=idx: self._select_mech_card(i))
             w.bind("<Double-Button-1>",
                    lambda e, i=idx: (self._select_mech_card(i), self.on_edit_loadout()))
-        self._mech_card_frames.append(card)
+        self._mech_card_frames.append((idx, card))
 
     def _select_mech_card(self, idx):
         self._sel_mech = idx
         self._highlight_selected()
 
     def _highlight_selected(self):
-        for i, card in enumerate(self._mech_card_frames):
-            sel = (i == self._sel_mech)
+        for idx, card in self._mech_card_frames:
+            sel = (idx == self._sel_mech)
             card.configure(highlightbackground=CARD_BORDER_SEL if sel else CARD_BORDER,
                            highlightcolor=CARD_BORDER_SEL if sel else CARD_BORDER,
                            highlightthickness=2 if sel else 1)
@@ -610,14 +619,23 @@ class EditorApp(tk.Tk):
         active = self.save.mechs()
         cold = self.save.cold_storage_mechs()
         self._mech_objs = list(active) + list(cold)
+        flt = getattr(self, "mech_filter", None)
+        flt = flt.get() if flt is not None else "all"
+        shown = []
         for idx, m in enumerate(self._mech_objs):
-            self._make_mech_card(idx, m, "Active bay" if idx < len(active) else "Cold storage")
-        if not self._mech_objs:
+            location = "Active bay" if idx < len(active) else "Cold storage"
+            if flt == "active" and location != "Active bay":
+                continue
+            if flt == "cold" and location != "Cold storage":
+                continue
+            self._make_mech_card(idx, m, location)
+            shown.append(idx)
+        if not shown:
             self._sel_mech = None
-        elif prev is not None and prev < len(self._mech_objs):
+        elif prev in shown:
             self._sel_mech = prev
         else:
-            self._sel_mech = 0
+            self._sel_mech = shown[0]
         self._highlight_selected()
         self.mech_canvas.yview_moveto(0)
         self.mech_count_var.set(
@@ -1191,6 +1209,7 @@ class LoadoutDialog(tk.Toplevel):
             ev = tk.StringVar(value="(empty)" if slot.is_empty else slot.equip_name)
             self.eq_widgets.append((slot, ev))
         self.armor_vars = {}     # location -> StringVar
+        self._chain_vars = [tk.BooleanVar(value=v) for v in mech.chain_fire_groups()]
         self.view_mode = tk.StringVar(value=getattr(LoadoutDialog, "_last_mode", "body"))
 
         self._build()
@@ -1395,6 +1414,17 @@ class LoadoutDialog(tk.Toplevel):
                       ).grid(row=i, column=0, sticky="w", pady=1)
             for gi, gv in enumerate(gvars, start=1):
                 ttk.Checkbutton(fgf, variable=gv).grid(row=i, column=gi)
+        self._render_chain_fire_row(fgf, len(self.slot_widgets) + 1, 0)
+
+    def _render_chain_fire_row(self, grid, row, group_col0):
+        """A 'chain fire' toggle per group (1-6): on = weapons in that group fire
+        one after another; off = salvo (all at once). group_col0 is the grid
+        column just before group 1's column."""
+        ttk.Label(grid, text="Chain fire (off = salvo)", width=34, anchor="w",
+                  foreground="#555").grid(row=row, column=0, sticky="w", pady=(6, 1))
+        for gi in range(1, 7):
+            ttk.Checkbutton(grid, variable=self._chain_vars[gi - 1]).grid(
+                row=row, column=group_col0 + gi)
 
     def _render_list_view(self):
         """Dense, one-row-per-hardpoint view with inline fire groups. Renders
@@ -1435,6 +1465,8 @@ class LoadoutDialog(tk.Toplevel):
                              width=22, state="readonly").grid(row=r, column=1, columnspan=6,
                                                               sticky="w", padx=2)
                 r += 1
+        if self.slot_widgets:
+            self._render_chain_fire_row(grid, r + 1, 1)   # group cols are 1+gi here
 
     def _refresh_traits(self):
         self.mtrait_list.delete(0, "end")
@@ -1497,6 +1529,9 @@ class LoadoutDialog(tk.Toplevel):
         except ValueError:
             messagebox.showerror("Invalid", "Armor values must be whole numbers.")
             return
+        # chain-fire (per group 1-6)
+        for gi, v in enumerate(self._chain_vars, start=1):
+            self.mech.set_chain_fire_group(gi, v.get())
         self.mech.flush()
         if self.on_apply:
             self.on_apply()

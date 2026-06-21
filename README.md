@@ -204,6 +204,11 @@ identical to the original.** `editor/test_roundtrip.py` and the model sweep in
 
 ## 📝 Changelog
 
+**v1.14.6**
+- **Mech list filter** — Show: All / Active Bay / Cold Storage on the Mechs tab.
+- **Chain fire toggle** per fire group in Edit Loadout (on = chain fire, off =
+  salvo); saved, restored, and included in exported loadouts. (issue #7)
+
 **v1.14.5**
 - **Fix:** AMS (Anti-Missile System) hardpoints are now editable in Edit Loadout —
   they previously showed nothing selectable. (issue #7)
