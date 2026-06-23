@@ -90,13 +90,11 @@ most commonly reported false positives against legitimate indie software.
 
 To be sure and carry on:
 
-- **Verify your download.** A genuine copy matches the SHA-256 hashes published for that
-  release. For **v1.11.2**:
-  - zip: `21E283FC6B0D4FC02E073EEFF358A9C54FB1EB2140147CE6E0EEE231F115D1FF`
-  - `MW5SaveEditor.exe`: `214D469647636BC74749DCDEB57C6912D296C7CDE6325B7D96D5FD73375D96EE`
-
-  If your hash matches, it's the real release. If it doesn't, delete it and re-download
-  from the official [Releases page](../../releases/latest) or Nexus, not a mirror.
+- **Verify your download.** Every release lists the SHA-256 hashes of its `.zip` and
+  `JJsaveEditor.exe` at the bottom of the [release notes](../../releases/latest). A genuine
+  copy matches those. If your hash matches, it's the real release. If it doesn't, delete it
+  and re-download from the official [Releases page](../../releases/latest) or Nexus, not a
+  mirror.
 - **Second-opinion scan.** Upload the file to [VirusTotal](https://www.virustotal.com/).
   A few heuristic engines flagging it while the rest come back clean is what a false
   positive looks like.
@@ -105,9 +103,11 @@ To be sure and carry on:
 
 > Maintainer note: report flagged builds to the
 > [Microsoft false-positive portal](https://www.microsoft.com/en-us/wdsi/filesubmission) so
-> Defender pushes a cloud correction for all users. The hashes above are per-release, so
-> refresh them each version. Proper code signing is the durable fix; [SignPath](https://signpath.io/)
-> offers free certificates for open-source projects.
+> Defender pushes a cloud correction for all users (submit the actual `JJsaveEditor.exe`;
+> per-release SHA-256 hashes are auto-published in the release notes). Proper code signing is
+> the durable fix; [SignPath](https://signpath.io/) offers free certificates for open-source
+> projects, and [Azure Trusted Signing](https://learn.microsoft.com/azure/trusted-signing/)
+> is a low-cost alternative that doesn't depend on project popularity.
 
 ---
 

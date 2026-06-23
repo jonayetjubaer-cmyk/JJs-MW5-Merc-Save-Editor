@@ -48,7 +48,12 @@ jobs:
           $tag = "${{ github.ref_name }}"
           $ver = $tag -replace '^v', ''
           if (-not $tag.StartsWith('v')) { $ver = '0.0.0-dev' }
+          # Numeric-only form for the Windows VERSIONINFO resource: Nuitka's
+          # --file-version wants digits/dots, so strip any suffix like -dev.
+          $filever = ($ver -replace '[^0-9.]', '').Trim('.')
+          if (-not $filever) { $filever = '0.0.0' }
           "version=$ver"                                   >> $env:GITHUB_OUTPUT
+          "filever=$filever"                               >> $env:GITHUB_OUTPUT
           "zip=JJs-MW5-Merc-Save-Editor-$tag.zip"          >> $env:GITHUB_OUTPUT
 
       - name: Build with Nuitka (native binary)
@@ -60,6 +65,12 @@ jobs:
             --include-data-files=editor/app_icon.ico=app_icon.ico `
             --include-data-files=editor/app_icon.png=app_icon.png `
             --include-data-files=editor/stock_templates.json.gz=stock_templates.json.gz `
+            --company-name="JJ (jonayetjubaer-cmyk)" `
+            --product-name="JJ's MW5 Merc Save Editor" `
+            --file-version=${{ steps.ver.outputs.filever }} `
+            --product-version=${{ steps.ver.outputs.filever }} `
+            --file-description="JJ's MechWarrior 5 Mercenaries Save Editor" `
+            --copyright="(c) 2026 JJ (jonayetjubaer-cmyk). MIT License." `
             --assume-yes-for-downloads `
             --output-dir=build_out --output-filename=JJsaveEditor.exe `
             editor/gui.py
@@ -128,6 +139,25 @@ jobs:
           Set-Content -Path release_notes.md -Value $body -Encoding utf8
           Write-Host "----- release_notes.md -----"
           Write-Host $body
+
+      - name: Append SHA-256 hashes to release notes
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $zip = "${{ steps.ver.outputs.zip }}"
+          $exe = "build_out/JJsaveEditor/JJsaveEditor.exe"
+          $zipHash = (Get-FileHash $zip -Algorithm SHA256).Hash
+          $exeHash = (Get-FileHash $exe -Algorithm SHA256).Hash
+          $lines = @(
+            ""
+            "---"
+            ""
+            "**SHA-256** (a genuine download matches these):"
+            ('- `' + [System.IO.Path]::GetFileName($zip) + '`: `' + $zipHash + '`')
+            ('- `JJsaveEditor.exe`: `' + $exeHash + '`')
+          )
+          Add-Content -Path release_notes.md -Value $lines -Encoding utf8
+          Write-Host ($lines -join "`n")
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
