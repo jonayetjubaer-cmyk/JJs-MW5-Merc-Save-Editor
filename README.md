@@ -20,10 +20,6 @@ nothing else needed.
 
 > 💡 The first launch takes a few seconds (the app unpacks itself). That's normal.
 
-> 🔏 Windows builds are code-signed using a free code-signing certificate provided by
-> [SignPath Foundation](https://signpath.org), with signing infrastructure from
-> [SignPath.io](https://signpath.io).
-
 ---
 
 ## ✨ What you can edit
@@ -199,8 +195,6 @@ identical to the original.** `editor/test_roundtrip.py` and the model sweep in
   drove the expanded catalogs and the Add Mech cleanup.
 - **DallasSukerkin** — reported the Add Mech and AMS issues fixed in v1.11.2.
 - Everyone on Nexus and GitHub who has filed reports and suggestions.
-- **[SignPath Foundation](https://signpath.org)** — free code-signing certificate for this
-  open-source project, with signing infrastructure provided by [SignPath.io](https://signpath.io).
 
 ## 📝 Changelog
 
