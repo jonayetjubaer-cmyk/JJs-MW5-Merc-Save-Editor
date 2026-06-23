@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.14.7
+- **Updated item catalog.** Refreshed the weapons/equipment/ammo asset catalog with the
+  revised dataset from FiendishDrWu: adds DLC8 items and targeting computers (Mk1-Mk7),
+  Clan Active Probe, X-Pulse / Large X-Pulse lasers, Arrow IV, Light Autocannon, MRM and
+  melee variants, plus matching ammo; removes battle-armor weapon variants from DLC7 and a
+  handful of entries that don't exist in the `.pak` files. Totals: weapons 712 -> 791,
+  equipment 45 -> 47, ammo 86 -> 92. (issue #9, FiendishDrWu)
+
 ## v1.14.6
 - **Filter the mech list by location.** A new **Show: All / Active Bay / Cold Storage**
   toggle at the top of the Mechs tab, handy when you have a lot of mechs in cold storage.
