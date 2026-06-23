@@ -1850,6 +1850,15 @@ class SaveFile:
                 write_property_list(w, m.element)
                 out.append({"chassis": m.chassis,
                             "blob": base64.b64encode(w.bytes()).decode("ascii")})
+            # Cold-storage mechs live in the same wrapper array but carry a
+            # ColdStorageLoadout marker, so self.mechs() (active bay only)
+            # skips them. Export them too (issue #10) -- the marker rides along
+            # in the blob, and import_from() detects it to restore cold status.
+            for m in self.cold_storage_mechs():
+                w = Writer()
+                write_property_list(w, m.element)
+                out.append({"chassis": m.chassis, "cold": True,
+                            "blob": base64.b64encode(w.bytes()).decode("ascii")})
             data["mechs"] = out
         if pilots:
             out = []
@@ -1898,10 +1907,15 @@ class SaveFile:
                 m.flush()
                 wrappers.elements.append(el)
                 wrappers.count += 1
-                slot = copy.deepcopy(storage.elements[0])
-                slot.get("Value").raw_payload = new_guid
-                storage.elements.append(slot)
-                storage.count += 1
+                # Active-bay mechs are registered in MechStorageList; cold-storage
+                # records are NOT (issue #10). Detect cold status from the imported
+                # element itself (the ColdStorageLoadout marker rode along in the
+                # blob) so an exported cold mech comes back into cold storage.
+                if m.loadout_type != COLD_STORAGE_LOADOUT_TYPE:
+                    slot = copy.deepcopy(storage.elements[0])
+                    slot.get("Value").raw_payload = new_guid
+                    storage.elements.append(slot)
+                    storage.count += 1
                 summary["mechs"] += 1
 
         if pilots and data.get("pilots"):

@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.14.8
+- **Fix: cold-storage mechs are now included in export/import.** The portable
+  `.mw5export` export only wrote active-bay mechs, so mechs in Cold Storage were
+  silently dropped and couldn't be moved to another save. Export now includes
+  cold-storage mechs as well, and import puts them back into Cold Storage (rather
+  than the active bay), preserving where they were. (issue #10, Volt-Ampere)
+
 ## v1.14.7
 - **Updated item catalog.** Refreshed the weapons/equipment/ammo asset catalog with the
   revised dataset from FiendishDrWu: adds DLC8 items and targeting computers (Mk1-Mk7),
