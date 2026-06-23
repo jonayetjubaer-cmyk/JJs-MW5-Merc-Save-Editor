@@ -11,18 +11,18 @@
 
 ---
 
-## ⬇️ Download
+## Download
 
-**[➡️ Download the latest version from the Releases page](../../releases/latest)**
+**[Download the latest version from the Releases page](../../releases/latest)**
 
 Grab `JJsaveEditor.exe`, double-click it, and you're in. No install, no Python,
 nothing else needed.
 
-> 💡 The first launch takes a few seconds (the app unpacks itself). That's normal.
+> The first launch takes a few seconds (the app unpacks itself). That's normal.
 
 ---
 
-## ✨ What you can edit
+## What you can edit
 
 - **Mechs** — add any chassis (full vanilla + DLC roster), swap a mech's chassis,
   repair armor (single or *all* mechs at once), or remove mechs.
@@ -36,7 +36,7 @@ nothing else needed.
 
 ---
 
-## 📸 Screenshots
+## Screenshots
 
 | Mechs | Loadout editor (weapons · equipment · armor) |
 |:---:|:---:|
@@ -48,7 +48,7 @@ nothing else needed.
 
 ---
 
-## 🕹️ How to use
+## How to use
 
 1. **Back up your save first** (seriously — see below).
 2. Open `JJsaveEditor.exe`.
@@ -59,7 +59,7 @@ nothing else needed.
 
 ---
 
-## ⚠️ Please read — back up your saves
+## Please read — back up your saves
 
 This tool edits your save files directly. **Always keep a backup** before editing.
 
@@ -69,7 +69,7 @@ This tool edits your save files directly. **Always keep a backup** before editin
 
 ---
 
-## 🛡️ "Windows protected your PC" / antivirus / "malware" flag
+## "Windows protected your PC" / antivirus / "malware" flag
 
 Because this is a small indie tool that isn't code-signed (signing costs money),
 Windows SmartScreen or your antivirus may warn you the first time you run it,
@@ -107,7 +107,7 @@ To be sure and carry on:
 
 ---
 
-## ❓ FAQ
+## FAQ
 
 **Does it work with all the DLC?**
 Yes — the mech and item lists include vanilla + DLC content. The game safely
@@ -132,7 +132,7 @@ a byte-for-byte identical file. Still: **keep a backup.**
 
 ---
 
-## 🛠️ Build / run from source
+## Build / run from source
 
 The editor is pure Python + Tkinter (Tkinter ships with Python on Windows), so
 there are no dependencies to run it from source:
@@ -174,7 +174,7 @@ antivirus false positives.
 | `tools/diff_saves.py` | Binary diff helper used while reverse-engineering |
 | `notes/format_notes.md` | Reverse-engineered save format notes (the two big gotchas live here) |
 
-## 🤝 Contributing
+## Contributing
 
 PRs and issues welcome! Good first contributions:
 
@@ -188,15 +188,25 @@ The golden rule of this codebase: **a no-op save must stay byte-for-byte
 identical to the original.** `editor/test_roundtrip.py` and the model sweep in
 `notes/format_notes.md` are how that's validated — please keep it lossless.
 
-## 🙏 Acknowledgments
+## Acknowledgments
+
+Huge thanks to everyone who has tested the editor and filed reports — this tool is
+better because of you:
 
 - **FiendishDrWu** — contributed the game's full asset list and clean-room save-format
-  notes (cold storage, campaign date, DLC tables) in [issue #2](../../issues/2), which
-  drove the expanded catalogs and the Add Mech cleanup.
+  notes (cold storage, campaign date, DLC tables) in [issue #2](../../issues/2), the stock
+  mech data in [issue #6](../../issues/6), and the updated item catalog in
+  [issue #9](../../issues/9) — which drove the expanded catalogs and the Add Mech cleanup.
+- **TimeDiver0** — reported the hidden equipment-slot options ([issue #5](../../issues/5))
+  and the AMS hardpoint editing and per-group chain-fire work ([issue #7](../../issues/7)).
+- **eXFDA** — reported the missing DLC and Clan chassis in the Add Mech list
+  ([issue #8](../../issues/8)).
+- **Volt-Ampere** — reported cold-storage mechs being left out of export/import
+  ([issue #10](../../issues/10)).
 - **DallasSukerkin** — reported the Add Mech and AMS issues fixed in v1.11.2.
 - Everyone on Nexus and GitHub who has filed reports and suggestions.
 
-## 📝 Changelog
+## Changelog
 
 **v1.14.6**
 - **Mech list filter** — Show: All / Active Bay / Cold Storage on the Mechs tab.
@@ -344,7 +354,7 @@ identical to the original.** `editor/test_roundtrip.py` and the model sweep in
   your save has one on record (e.g. a mech you've seen in a mission), so added
   mechs come out with correct, ready-to-fit hardpoints.
 
-> ℹ️ A chassis's true hardpoints live in the game's files, not the save, so the
+> A chassis's true hardpoints live in the game's files, not the save, so the
 > editor can only show/apply layouts it has actually seen. To get a chassis's
 > real hardpoints when none exist in your save, fit that mech once in the in-game
 > Mech Lab and save — the editor will then show them all.
@@ -380,7 +390,7 @@ identical to the original.** `editor/test_roundtrip.py` and the model sweep in
 **v1.0.0**
 - Initial release: Mechs, Pilots, Inventory, C-Bills, and Faction Standings.
 
-## 📄 License
+## License
 
 [MIT](LICENSE) — do whatever you like, just keep the copyright notice.
 
