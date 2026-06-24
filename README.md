@@ -208,6 +208,22 @@ better because of you:
 
 ## Changelog
 
+**v1.14.10**
+- **Fix:** an exact-copy added mech no longer inherits a damaged donor's
+  under-repair look — the repair step now restores internal structure too, so the
+  copy always arrives fully patched up. (issue #13)
+
+**v1.14.9**
+- **Fix:** Duncan Fisher's hero Warhammer now shows its weight and class instead of
+  `?t` / `?`. (issue #11)
+
+**v1.14.8**
+- **Fix:** cold-storage mechs are now included in `.mw5export` export/import. (issue #10)
+
+**v1.14.7**
+- **Updated item catalog** — DLC8 items, targeting computers, Clan Active Probe,
+  X-Pulse lasers, Arrow IV, MRM and more. (issue #9)
+
 **v1.14.6**
 - **Mech list filter** — Show: All / Active Bay / Cold Storage on the Mechs tab.
 - **Chain fire toggle** per fire group in Edit Loadout (on = chain fire, off =

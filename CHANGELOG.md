@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.14.10
+- **Fix: an exact-copy added mech no longer inherits the donor's damage / under-repair
+  look.** When you Add Mech for a chassis you already own, the editor duplicates one of
+  your existing mechs. If that donor was damaged or in the repair bay, the copy kept the
+  donor's reduced structure and spawned looking battle-damaged. The repair step now also
+  restores internal structure (MW5 saves store no max-structure reference, so it's
+  restored from the chassis's factory-stock template), so an added copy always arrives
+  fully patched up regardless of the donor's condition. The fresh GUID already keeps the
+  copy out of the original's repair queue. (issue #13, DallasSukerkin)
+- Also corrects the title-bar version, which still read v1.14.6 through the 1.14.7-1.14.9
+  releases (those didn't touch `gui.py`).
+
 ## v1.14.9
 - **Fix: Duncan Fisher's Warhammer now shows its weight and class.** The hero
   Warhammer (`WHM-DNC_PLAYABLE`) displayed as `?t` / `?` weight class because the

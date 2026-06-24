@@ -467,11 +467,24 @@ class Mech:
 
         copy_struct("InstalledArmor", "CurrentArmor", ARMOR_PARTS)
         copy_struct("InstalledRearArmor", "CurrentRearArmor", REAR_PARTS)
-        # Structure: many saves only store CurrentStructure; if there's an
-        # "InstalledStructure" use it, else max out from CurrentStructure's own
-        # values is impossible, so leave structure if no install reference.
+        # Structure: in practice MW5 saves only store CurrentStructure (no
+        # "InstalledStructure"), so there is no in-save max to copy from. If the
+        # donor was damaged/under repair its reduced CurrentStructure would carry
+        # into an exact-copy add and the new mech would spawn looking damaged
+        # (issue #13). Restore from this chassis's stock-template structure, which
+        # is the factory-max value per location.
         if ld.get("InstalledStructure") is not None:
             copy_struct("InstalledStructure", "CurrentStructure", ARMOR_PARTS)
+        else:
+            cs = ld.get("CurrentStructure")
+            tpl = stock_template(self.chassis)
+            if cs is not None and cs.decoded is not None and tpl is not None:
+                struct = tpl.get("structure", {})
+                for part in ARMOR_PARTS:
+                    v = struct.get(part)
+                    dp = cs.decoded.get(part)
+                    if v is not None and dp is not None:
+                        dp.raw_payload = write_float(float(v))
 
     def installed_weapon_count(self) -> int:
         iw = _path(self.market_item.decoded, "Item", "ItemData", "InstalledWeapons")
