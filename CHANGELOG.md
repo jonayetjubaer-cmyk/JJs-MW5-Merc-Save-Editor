@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.14.9
+- **Fix: Duncan Fisher's Warhammer now shows its weight and class.** The hero
+  Warhammer (`WHM-DNC_PLAYABLE`) displayed as `?t` / `?` weight class because the
+  `_PLAYABLE` asset suffix wasn't recognised and the variant wasn't mapped to its
+  chassis. It now resolves to Warhammer (70t, Heavy). Other `_PLAYABLE` hero/campaign
+  mechs are handled the same way. (issue #11, Volt-Ampere)
+
 ## v1.14.8
 - **Fix: cold-storage mechs are now included in export/import.** The portable
   `.mw5export` export only wrote active-bay mechs, so mechs in Cold Storage were

@@ -99,8 +99,17 @@ CHASSIS = {
 
 ALL_VARIANTS = sorted(v for vs in CHASSIS.values() for v in vs)
 
+# Variants recognised for DISPLAY / tonnage only -- hero or campaign "_PLAYABLE"
+# mechs that show up in saves but aren't offered in Add Mech (we don't want to
+# guess an addable "_MDA" asset name for them). Mapping them here lets weight and
+# weight-class resolve without polluting the Add Mech roster (LABELED/ALL_VARIANTS).
+DISPLAY_ONLY_VARIANTS = {
+    "WHM-DNC": "Warhammer",   # Duncan Fisher's Warhammer (asset WHM-DNC_PLAYABLE)
+}
+
 # variant code -> chassis display name (e.g. "AS7-D" -> "Atlas")
 VARIANT_TO_CHASSIS = {v: name for name, vs in CHASSIS.items() for v in vs}
+VARIANT_TO_CHASSIS.update(DISPLAY_ONLY_VARIANTS)
 
 # Well-known hero / named variants (high-confidence MW5 names only).
 HERO_NAMES = {
@@ -113,7 +122,7 @@ HERO_NAMES = {
     "CDA-X5": "X-5", "ON1-YAJ": "Yajima", "DRG-FANG": "Fang", "DRG-FLAME": "Flame",
     "DRG-SDW": "Shadow", "LGB-HS": "Hailstorm", "LDK-IDM": "Indomitable",
     "MAL-MX90": "MX90", "BLR-1GHE": "Hellslinger", "VL-BL": "Bloodlust",
-    "GHR-MJ": "Mjolnir", "CGR-N7": "N7",
+    "GHR-MJ": "Mjolnir", "CGR-N7": "N7", "WHM-DNC": "Duncan Fisher",
 }
 
 
@@ -174,8 +183,13 @@ def asset_name(variant: str) -> str:
 
 
 def variant_code(name: str) -> str:
-    """Strip a trailing _MDA (and accept either form)."""
-    return name[:-4] if name.endswith("_MDA") else name
+    """Normalise an asset name to its bare variant code, stripping known
+    suffixes: a trailing _MDA, and the _PLAYABLE marker some hero/campaign
+    mechs carry (e.g. 'WHM-DNC_PLAYABLE' -> 'WHM-DNC')."""
+    code = name[:-4] if name.endswith("_MDA") else name
+    if code.endswith("_PLAYABLE"):
+        code = code[:-len("_PLAYABLE")]
+    return code
 
 
 def display(name: str) -> str:
