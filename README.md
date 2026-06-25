@@ -208,6 +208,13 @@ better because of you:
 
 ## Changelog
 
+**v1.15.0**
+- **Dark mode** — Theme selector (System / Light / Dark) in the toolbar; System follows
+  the Windows theme and your choice is remembered.
+- **Stock structure/armor type** shown on mech cards (Endo-Steel / Ferro-Fibrous, incl.
+  Clan) when not Standard. Merged armor/structure type data for all 552 chassis from
+  FiendishDrWu. (issue #12)
+
 **v1.14.10**
 - **Fix:** an exact-copy added mech no longer inherits a damaged donor's
   under-repair look — the repair step now restores internal structure too, so the

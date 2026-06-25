@@ -57,3 +57,32 @@ def stock_template(chassis: str):
 
 def available() -> bool:
     return bool(_load())
+
+
+# Asset-name -> human label for the structure/armor types recorded in the
+# templates (issue #12 data from FiendishDrWu). Clan variants are flagged so a
+# user can tell a Clan Endo/Ferro chassis from the Inner Sphere kind.
+_TYPE_LABELS = {
+    "StandardArmor": "Standard",
+    "FerroFibrousArmor": "Ferro-Fibrous",
+    "ClanFerroFibrousArmor": "Ferro-Fibrous (Clan)",
+    "StandardStructure": "Standard",
+    "EndoSteelStructure": "Endo-Steel",
+    "ClanEndoSteelStructure": "Endo-Steel (Clan)",
+}
+
+
+def type_label(asset_name: str | None) -> str:
+    """Human label for an armor/structure type asset name (e.g.
+    'FerroFibrousArmor' -> 'Ferro-Fibrous'). Falls back to the raw name."""
+    if not asset_name:
+        return "Standard"
+    return _TYPE_LABELS.get(asset_name, asset_name)
+
+
+def stock_types(chassis: str) -> tuple[str, str] | None:
+    """(armor_label, structure_label) for a chassis, or None if no template."""
+    tpl = stock_template(chassis)
+    if tpl is None:
+        return None
+    return type_label(tpl.get("armorType")), type_label(tpl.get("structureType"))

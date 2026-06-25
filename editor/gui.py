@@ -36,6 +36,7 @@ def _resource_path(name: str) -> str:
 from mech_catalog import LABELED, asset_name, display as mech_display, variant_code, chassis_info
 from item_catalog import CATALOG, CATEGORY_INVENTORY, WEAPONS, EQUIPMENT, AMMO
 from savefile import weapon_class, ARMOR_PARTS, REAR_PARTS
+from stock_templates import stock_types
 
 HARDPOINT_LABEL = {"EH": "Energy", "BH": "Ballistic", "MH": "Missile",
                    "AH": "Anti-Missile", "Melee": "Melee"}
@@ -48,15 +49,80 @@ LOCATION_LABEL = {"Head": "Head", "CenterTorso": "Center Torso",
                   "LeftArm": "Left Arm", "RightArm": "Right Arm",
                   "LeftLeg": "Left Leg", "RightLeg": "Right Leg"}
 
-# weight-class colours for the mech-bay cards (icon colour; badge bg/fg)
-CLASS_ICON = {"Light": "#185fa5", "Medium": "#1d9e75",
-              "Heavy": "#ba7517", "Assault": "#d85a30"}
-CLASS_BADGE = {"Light": ("#e6f1fb", "#0c447c"), "Medium": ("#e1f5ee", "#085041"),
-               "Heavy": ("#faeeda", "#633806"), "Assault": ("#faece7", "#712b13")}
-CARD_BG = "#ffffff"
-CARD_BG_COLD = "#f3f4f8"
-CARD_BORDER = "#cfcfcf"
-CARD_BORDER_SEL = "#2d6cdf"
+# weight-class colours for the mech-bay card icons (mid-tone; read on either theme)
+CLASS_ICON = {"Light": "#2f7fd0", "Medium": "#22b083",
+              "Heavy": "#d68a2a", "Assault": "#e2683b"}
+# per-theme weight-class badge (bg, fg)
+CLASS_BADGE_LIGHT = {"Light": ("#e6f1fb", "#0c447c"), "Medium": ("#e1f5ee", "#085041"),
+                     "Heavy": ("#faeeda", "#633806"), "Assault": ("#faece7", "#712b13")}
+CLASS_BADGE_DARK = {"Light": ("#21384f", "#9cc6f2"), "Medium": ("#1d3b32", "#82d8bb"),
+                    "Heavy": ("#3d2f1a", "#e6b870"), "Assault": ("#3d251c", "#f0a184")}
+
+# ---- theming -------------------------------------------------------------
+# Two palettes; the live one is THEME (a mutable dict the card/canvas code
+# reads). Light keeps the native ttk look; dark restyles via the 'clam' theme.
+PALETTES = {
+    "light": {
+        "window": "#f0f0f0", "surface": "#ffffff", "surface_alt": "#f3f4f8",
+        "border": "#cfcfcf", "border_sel": "#2d6cdf",
+        "text": "#1a1a1a", "text_muted": "#666666",
+        "badge_bg": "#eeeeee", "badge_fg": "#333333",
+        "tree_bg": "#ffffff", "tree_sel": "#cfe0fb", "tree_sel_fg": "#10243f",
+        "entry_bg": "#ffffff", "button_bg": "#e1e1e1",
+        "class_badge": CLASS_BADGE_LIGHT,
+    },
+    "dark": {
+        "window": "#1e1f22", "surface": "#2a2b2e", "surface_alt": "#232427",
+        "border": "#3a3b3f", "border_sel": "#4a8cff",
+        "text": "#e6e6e6", "text_muted": "#9a9a9a",
+        "badge_bg": "#3a3b3f", "badge_fg": "#dddddd",
+        "tree_bg": "#232427", "tree_sel": "#2d4a73", "tree_sel_fg": "#eaf1fb",
+        "entry_bg": "#33343a", "button_bg": "#3a3b40",
+        "class_badge": CLASS_BADGE_DARK,
+    },
+}
+THEME = dict(PALETTES["light"])  # live palette; mutated by EditorApp._apply_theme
+
+
+def detect_windows_theme() -> str:
+    """'dark' or 'light' from the Windows personalization setting; defaults to
+    'light' off-Windows or if the registry key is unavailable."""
+    try:
+        import winreg
+        key = winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")
+        val, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
+        winreg.CloseKey(key)
+        return "light" if val else "dark"
+    except Exception:
+        return "light"
+
+
+_CONFIG_PATH = os.path.join(os.path.expanduser("~"), ".jjmw5_save_editor.json")
+
+
+def load_pref(name, default=None):
+    try:
+        import json as _json
+        with open(_CONFIG_PATH, encoding="utf-8") as f:
+            return _json.load(f).get(name, default)
+    except Exception:
+        return default
+
+
+def save_pref(name, value):
+    try:
+        import json as _json
+        data = {}
+        if os.path.exists(_CONFIG_PATH):
+            with open(_CONFIG_PATH, encoding="utf-8") as f:
+                data = _json.load(f)
+        data[name] = value
+        with open(_CONFIG_PATH, "w", encoding="utf-8") as f:
+            _json.dump(data, f)
+    except Exception:
+        pass
 
 
 def weapon_slot_location(slot_id: str) -> str:
@@ -74,7 +140,7 @@ def weapon_slot_location(slot_id: str) -> str:
     return part or "Other"
 
 
-APP_VERSION = "1.14.10"
+APP_VERSION = "1.15.0"
 
 DEFAULT_SAVE_DIR = os.path.expandvars(
     r"%LOCALAPPDATA%\MW5Mercs\Saved\SaveGames"
@@ -95,6 +161,12 @@ class EditorApp(tk.Tk):
         # trait catalog (names the loaded save references; filled on open)
         self.traitcat = {"pilot": [], "mech": []}
 
+        # theme: 'system' (follow Windows), 'light' or 'dark'
+        self.style = ttk.Style(self)
+        self._native_theme = self.style.theme_use()
+        self._theme_pref = tk.StringVar(value=load_pref("theme", "system"))
+        self._apply_theme(self._theme_pref.get())
+
         self._build_toolbar()
 
         self.nb = ttk.Notebook(self)
@@ -114,7 +186,9 @@ class EditorApp(tk.Tk):
 
         self.status = tk.StringVar(value="Open a .sav file to begin.")
         ttk.Label(self, textvariable=self.status, relief="sunken",
-                  anchor="w").pack(fill="x", side="bottom")
+                  style="Status.TLabel", anchor="w").pack(fill="x", side="bottom")
+        # re-apply now that themed widgets (canvas, cards) exist
+        self._apply_theme(self._theme_pref.get())
 
     def _set_app_icon(self):
         """Set the window / taskbar icon from the bundled app_icon.ico."""
@@ -131,6 +205,70 @@ class EditorApp(tk.Tk):
         except Exception:
             pass
 
+    # -- theming -----------------------------------------------------------
+    def _on_theme_change(self, _evt=None):
+        pref = self._theme_pref.get().lower()
+        self._theme_pref.set(pref)
+        save_pref("theme", pref)
+        self._apply_theme(pref)
+
+    def _apply_theme(self, pref: str):
+        """Apply 'system' / 'light' / 'dark'. Mutates the global THEME palette,
+        restyles ttk + the raw-tk widgets, and refreshes the mech cards."""
+        mode = detect_windows_theme() if pref == "system" else pref
+        if mode not in PALETTES:
+            mode = "light"
+        THEME.clear()
+        THEME.update(PALETTES[mode])
+        p = THEME
+        st = self.style
+        # Light keeps the native ttk theme; dark needs 'clam' (fully colourable).
+        st.theme_use("clam" if mode == "dark" else self._native_theme)
+
+        if mode == "dark":
+            st.configure(".", background=p["window"], foreground=p["text"],
+                         fieldbackground=p["entry_bg"], bordercolor=p["border"])
+            st.configure("TFrame", background=p["window"])
+            st.configure("TLabel", background=p["window"], foreground=p["text"])
+            st.configure("TLabelframe", background=p["window"], bordercolor=p["border"])
+            st.configure("TLabelframe.Label", background=p["window"], foreground=p["text"])
+            st.configure("TButton", background=p["button_bg"], foreground=p["text"])
+            st.map("TButton", background=[("active", p["border"])])
+            st.configure("TCheckbutton", background=p["window"], foreground=p["text"])
+            st.configure("TRadiobutton", background=p["window"], foreground=p["text"])
+            st.map("TCheckbutton", background=[("active", p["window"])])
+            st.map("TRadiobutton", background=[("active", p["window"])])
+            for w in ("TEntry", "TCombobox", "TSpinbox"):
+                st.configure(w, fieldbackground=p["entry_bg"], foreground=p["text"],
+                             background=p["button_bg"], arrowcolor=p["text"],
+                             insertcolor=p["text"])
+            st.map("TCombobox", fieldbackground=[("readonly", p["entry_bg"])],
+                   foreground=[("readonly", p["text"])])
+            st.configure("TNotebook", background=p["window"], bordercolor=p["border"])
+            st.configure("TNotebook.Tab", background=p["surface_alt"], foreground=p["text"])
+            st.map("TNotebook.Tab", background=[("selected", p["surface"])],
+                   foreground=[("selected", p["text"])])
+            st.configure("Treeview", background=p["tree_bg"], fieldbackground=p["tree_bg"],
+                         foreground=p["text"])
+            st.configure("Treeview.Heading", background=p["button_bg"], foreground=p["text"])
+            st.map("Treeview", background=[("selected", p["tree_sel"])],
+                   foreground=[("selected", p["tree_sel_fg"])])
+            st.configure("TScrollbar", background=p["button_bg"], troughcolor=p["surface_alt"],
+                         arrowcolor=p["text"], bordercolor=p["border"])
+
+        st.configure("Status.TLabel", background=p["surface_alt"], foreground=p["text_muted"])
+        st.configure("Muted.TLabel", foreground=p["text_muted"],
+                     background=p["window"])
+
+        self.configure(bg=p["window"])
+        # tk Toplevel dialogs and any raw tk.Frame inherit this default bg.
+        self.option_add("*background", p["window"])
+        self.option_add("*foreground", p["text"])
+        if hasattr(self, "mech_canvas"):
+            self.mech_canvas.configure(bg=p["window"])
+        if getattr(self, "save", None) is not None:
+            self._refresh_mechs()
+
     # -- toolbar -----------------------------------------------------------
     def _build_toolbar(self):
         bar = ttk.Frame(self)
@@ -141,6 +279,15 @@ class EditorApp(tk.Tk):
         ttk.Separator(bar, orient="vertical").pack(side="left", fill="y", padx=8)
         ttk.Button(bar, text="Export…", command=self.on_export).pack(side="left")
         ttk.Button(bar, text="Import…", command=self.on_import).pack(side="left", padx=4)
+
+        # theme selector (right side): System follows the Windows app theme
+        ttk.Label(bar, text="Theme:").pack(side="right", padx=(0, 4))
+        theme_cb = ttk.Combobox(bar, width=8, state="readonly",
+                                textvariable=self._theme_pref,
+                                values=("System", "Light", "Dark"))
+        theme_cb.set(self._theme_pref.get().capitalize())
+        theme_cb.pack(side="right")
+        theme_cb.bind("<<ComboboxSelected>>", self._on_theme_change)
 
     # -- mech tab ----------------------------------------------------------
     def _build_mech_tab(self):
@@ -216,25 +363,35 @@ class EditorApp(tk.Tk):
     def _make_mech_card(self, idx, m, location):
         tons, cls = chassis_info(m.chassis)
         cold = location == "Cold storage"
-        bg = CARD_BG_COLD if cold else CARD_BG
-        card = tk.Frame(self.mech_cards, bg=bg, highlightbackground=CARD_BORDER,
-                        highlightcolor=CARD_BORDER, highlightthickness=1, bd=0)
+        bg = THEME["surface_alt"] if cold else THEME["surface"]
+        card = tk.Frame(self.mech_cards, bg=bg, highlightbackground=THEME["border"],
+                        highlightcolor=THEME["border"], highlightthickness=1, bd=0)
         card.pack(fill="x", padx=2, pady=3)
 
         ic = tk.Canvas(card, width=40, height=42, bg=bg, highlightthickness=0)
         ic.pack(side="left", padx=(8, 6), pady=6)
         self._draw_mech_glyph(ic, CLASS_ICON.get(cls, "#888888"))
 
-        badge_bg, badge_fg = CLASS_BADGE.get(cls, ("#eeeeee", "#333333"))
+        badge_bg, badge_fg = THEME["class_badge"].get(
+            cls, (THEME["badge_bg"], THEME["badge_fg"]))
         tk.Label(card, text=(cls or "?").upper(), bg=badge_bg, fg=badge_fg,
                  font=("", 8, "bold"), padx=6, pady=2).pack(side="right", padx=8)
 
         mid = tk.Frame(card, bg=bg)
         mid.pack(side="left", fill="x", expand=True, pady=6)
-        tk.Label(mid, text=mech_display(m.chassis), bg=bg, anchor="w",
+        tk.Label(mid, text=mech_display(m.chassis), bg=bg, anchor="w", fg=THEME["text"],
                  justify="left", font=("", 10, "bold")).pack(fill="x")
-        tk.Label(mid, text=f"{tons or '?'}t · {location}", bg=bg, fg="#777777",
+        tk.Label(mid, text=f"{tons or '?'}t · {location}", bg=bg, fg=THEME["text_muted"],
                  anchor="w", font=("", 8)).pack(fill="x")
+        # stock structure/armor type, shown only when it's not plain Standard
+        # (Endo-Steel / Ferro-Fibrous chassis -- issue #12 data from FiendishDrWu)
+        types = stock_types(m.chassis)
+        if types is not None:
+            armor_t, struct_t = types
+            if not (armor_t == "Standard" and struct_t == "Standard"):
+                tk.Label(mid, text=f"{struct_t} · {armor_t}", bg=bg,
+                         fg=CLASS_ICON.get(cls, THEME["text_muted"]),
+                         anchor="w", font=("", 8, "italic")).pack(fill="x")
 
         for w in (card, ic, mid, *mid.winfo_children()):
             w.bind("<Button-1>", lambda e, i=idx: self._select_mech_card(i))
@@ -249,8 +406,8 @@ class EditorApp(tk.Tk):
     def _highlight_selected(self):
         for idx, card in self._mech_card_frames:
             sel = (idx == self._sel_mech)
-            card.configure(highlightbackground=CARD_BORDER_SEL if sel else CARD_BORDER,
-                           highlightcolor=CARD_BORDER_SEL if sel else CARD_BORDER,
+            border = THEME["border_sel"] if sel else THEME["border"]
+            card.configure(highlightbackground=border, highlightcolor=border,
                            highlightthickness=2 if sel else 1)
 
     # -- pilot tab ---------------------------------------------------------
@@ -367,7 +524,7 @@ class EditorApp(tk.Tk):
         ttk.Entry(filt, textvariable=self.inv_filter_var, width=30).pack(side="left", padx=4)
         self.inv_filter_var.trace_add("write", lambda *a: self._render_inventory())
         ttk.Label(filt, text="(click a column header to sort • shift/ctrl-click rows to multi-select)",
-                  foreground="#666").pack(side="left", padx=8)
+                  style="Muted.TLabel").pack(side="left", padx=8)
 
         # Current inventory list
         iwrap = ttk.Frame(self.inv_tab)
@@ -411,7 +568,7 @@ class EditorApp(tk.Tk):
         ttk.Label(self.faction_tab,
                   text="Faction standings (typically range -100 hostile … +100 allied). "
                        "Double-click a row to edit.",
-                  foreground="#666").pack(anchor="w", padx=6)
+                  style="Muted.TLabel").pack(anchor="w", padx=6)
 
         fwrap = ttk.Frame(self.faction_tab)
         fwrap.pack(fill="both", expand=True, padx=6, pady=4)
@@ -1368,7 +1525,7 @@ class LoadoutDialog(tk.Toplevel):
             ttk.Combobox(row, textvariable=var, values=self._equip_names(slot),
                          width=15, state="readonly").pack(side="left")
         if not sws and not ews:
-            ttk.Label(parent, text="(none)", foreground="#999", font=("", 8)).pack(padx=3, pady=2)
+            ttk.Label(parent, text="(none)", style="Muted.TLabel", font=("", 8)).pack(padx=3, pady=2)
 
     def _render_body_view(self):
         f = self.loadout_frame
@@ -1421,7 +1578,7 @@ class LoadoutDialog(tk.Toplevel):
         one after another; off = salvo (all at once). group_col0 is the grid
         column just before group 1's column."""
         ttk.Label(grid, text="Chain fire (off = salvo)", width=34, anchor="w",
-                  foreground="#555").grid(row=row, column=0, sticky="w", pady=(6, 1))
+                  style="Muted.TLabel").grid(row=row, column=0, sticky="w", pady=(6, 1))
         for gi in range(1, 7):
             ttk.Checkbutton(grid, variable=self._chain_vars[gi - 1]).grid(
                 row=row, column=group_col0 + gi)
@@ -1608,7 +1765,7 @@ class ChassisDialog(simpledialog.Dialog):
         self.lb.bind("<Double-Button-1>", lambda e: self.ok())
 
         ttk.Label(master, text="(or type an exact variant code above and press OK)",
-                  foreground="#666").pack(padx=8, pady=(0, 6), anchor="w")
+                  style="Muted.TLabel").pack(padx=8, pady=(0, 6), anchor="w")
         self._filter()
         return ent
 

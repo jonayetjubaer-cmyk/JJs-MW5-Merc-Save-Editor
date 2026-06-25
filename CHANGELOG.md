@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.15.0
+- **Dark mode.** New Theme selector in the toolbar: **System / Light / Dark**. System
+  follows the Windows app theme automatically (and a manual choice is remembered between
+  sessions). Added for readers who find the bright white UI hard on the eyes. (user request)
+- **Stock structure/armor type on mech cards.** Each chassis now shows its factory
+  structure and armor type when it isn't plain Standard — e.g. *Endo-Steel · Ferro-Fibrous*
+  (Clan variants labelled too). Read-only display; nothing is written to the save.
+- **Templates: armor/structure type data merged** for all 552 chassis, from FiendishDrWu's
+  updated extraction (issue #12). Note: vanilla MW5 saves don't store structure/armor type
+  at all — the game derives it from the chassis asset — so this is informational; it also
+  independently re-confirmed every stock armor/structure value the editor ships.
+
 ## v1.14.10
 - **Fix: an exact-copy added mech no longer inherits the donor's damage / under-repair
   look.** When you Add Mech for a chassis you already own, the editor duplicates one of
