@@ -208,6 +208,11 @@ better because of you:
 
 ## Changelog
 
+**v1.15.1**
+- **Update notifications** — checks GitHub for a newer release on startup and shows a
+  dismissible banner with GitHub/Nexus download links; plus a **Check for Updates** button.
+  Background, silent when offline, no telemetry.
+
 **v1.15.0**
 - **Dark mode** — Theme selector (System / Light / Dark) in the toolbar; System follows
   the Windows theme and your choice is remembered.

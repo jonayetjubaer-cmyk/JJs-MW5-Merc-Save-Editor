@@ -7,11 +7,15 @@ Run:  python gui.py
 """
 from __future__ import annotations
 
+import json
 import os
 import random
 import shutil
 import sys
+import threading
 import traceback
+import urllib.request
+import webbrowser
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, simpledialog
 
@@ -140,7 +144,41 @@ def weapon_slot_location(slot_id: str) -> str:
     return part or "Other"
 
 
-APP_VERSION = "1.15.0"
+APP_VERSION = "1.15.1"
+
+# update check (GitHub is the source of truth; Nexus may lag a release behind)
+GITHUB_REPO = "jonayetjubaer-cmyk/JJs-MW5-Merc-Save-Editor"
+GITHUB_API_LATEST = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+GITHUB_RELEASES_URL = f"https://github.com/{GITHUB_REPO}/releases/latest"
+NEXUS_URL = "https://www.nexusmods.com/mechwarrior5mercenaries/mods/1466"
+
+
+def _version_tuple(s: str) -> tuple:
+    """'v1.15.0' / '1.15.0' -> (1, 15, 0). Non-numeric parts are ignored so a
+    malformed tag can't crash the comparison."""
+    nums = []
+    for part in s.strip().lstrip("vV").split("."):
+        digits = "".join(c for c in part if c.isdigit())
+        if digits == "":
+            break
+        nums.append(int(digits))
+    return tuple(nums)
+
+
+def fetch_latest_version(timeout=6):
+    """Return the latest release tag (e.g. 'v1.15.0') from GitHub, or None on
+    any error (offline, rate-limited, malformed). Never raises."""
+    try:
+        req = urllib.request.Request(
+            GITHUB_API_LATEST,
+            headers={"Accept": "application/vnd.github+json",
+                     "User-Agent": f"JJsMW5SaveEditor/{APP_VERSION}"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        return data.get("tag_name") or None
+    except Exception:
+        return None
+
 
 DEFAULT_SAVE_DIR = os.path.expandvars(
     r"%LOCALAPPDATA%\MW5Mercs\Saved\SaveGames"
@@ -168,6 +206,7 @@ class EditorApp(tk.Tk):
         self._apply_theme(self._theme_pref.get())
 
         self._build_toolbar()
+        self._build_update_banner()
 
         self.nb = ttk.Notebook(self)
         self.nb.pack(fill="both", expand=True, padx=8, pady=(0, 8))
@@ -189,6 +228,10 @@ class EditorApp(tk.Tk):
                   style="Status.TLabel", anchor="w").pack(fill="x", side="bottom")
         # re-apply now that themed widgets (canvas, cards) exist
         self._apply_theme(self._theme_pref.get())
+
+        # quiet update check on startup (background; silent if offline)
+        if load_pref("check_updates", True):
+            self.after(800, lambda: self._check_updates_async(manual=False))
 
     def _set_app_icon(self):
         """Set the window / taskbar icon from the bundled app_icon.ico."""
@@ -279,6 +322,9 @@ class EditorApp(tk.Tk):
         ttk.Separator(bar, orient="vertical").pack(side="left", fill="y", padx=8)
         ttk.Button(bar, text="Export…", command=self.on_export).pack(side="left")
         ttk.Button(bar, text="Import…", command=self.on_import).pack(side="left", padx=4)
+        ttk.Separator(bar, orient="vertical").pack(side="left", fill="y", padx=8)
+        ttk.Button(bar, text="Check for Updates",
+                   command=lambda: self._check_updates_async(manual=True)).pack(side="left")
 
         # theme selector (right side): System follows the Windows app theme
         ttk.Label(bar, text="Theme:").pack(side="right", padx=(0, 4))
@@ -288,6 +334,61 @@ class EditorApp(tk.Tk):
         theme_cb.set(self._theme_pref.get().capitalize())
         theme_cb.pack(side="right")
         theme_cb.bind("<<ComboboxSelected>>", self._on_theme_change)
+
+    # -- update check ------------------------------------------------------
+    def _build_update_banner(self):
+        """A dismissible 'new version available' bar, hidden until needed."""
+        self._update_bar = tk.Frame(self, bg=THEME["border_sel"])
+        self._update_msg = tk.Label(self._update_bar, bg=THEME["border_sel"],
+                                    fg="#ffffff", anchor="w", padx=10, pady=5,
+                                    font=("", 9, "bold"))
+        self._update_msg.pack(side="left", fill="x", expand=True)
+        tk.Button(self._update_bar, text="GitHub", relief="flat", bd=0,
+                  bg="#ffffff", fg=THEME["border_sel"], padx=8,
+                  cursor="hand2", command=lambda: webbrowser.open(GITHUB_RELEASES_URL)
+                  ).pack(side="left", padx=(0, 4), pady=4)
+        tk.Button(self._update_bar, text="Nexus", relief="flat", bd=0,
+                  bg="#ffffff", fg=THEME["border_sel"], padx=8,
+                  cursor="hand2", command=lambda: webbrowser.open(NEXUS_URL)
+                  ).pack(side="left", padx=(0, 8), pady=4)
+        tk.Button(self._update_bar, text="✕", relief="flat", bd=0,
+                  bg=THEME["border_sel"], fg="#ffffff", padx=8, cursor="hand2",
+                  command=self._update_bar.pack_forget).pack(side="right", padx=4)
+        # not packed yet -> stays hidden until an update is found
+
+    def _check_updates_async(self, manual=False):
+        if getattr(self, "_update_checking", False):
+            return
+        self._update_checking = True
+        if manual:
+            self.status.set("Checking for updates…")
+
+        def worker():
+            tag = fetch_latest_version()
+            self.after(0, lambda: self._on_update_result(tag, manual))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_update_result(self, tag, manual):
+        self._update_checking = False
+        if not tag:
+            if manual:
+                messagebox.showwarning(
+                    "Check for Updates",
+                    "Couldn't reach GitHub to check for updates.\n"
+                    "Check your connection, or visit the Releases page directly.")
+            return
+        if _version_tuple(tag) > _version_tuple(APP_VERSION):
+            self._update_msg.configure(
+                text=f"A new version ({tag}) is available — you have v{APP_VERSION}.")
+            self._update_bar.pack(fill="x", before=self.nb)
+            self.status.set(f"Update available: {tag}. You're on v{APP_VERSION}.")
+        else:
+            self.status.set(f"You're up to date (v{APP_VERSION}).")
+            if manual:
+                messagebox.showinfo(
+                    "Check for Updates",
+                    f"You're running the latest version (v{APP_VERSION}).")
 
     # -- mech tab ----------------------------------------------------------
     def _build_mech_tab(self):

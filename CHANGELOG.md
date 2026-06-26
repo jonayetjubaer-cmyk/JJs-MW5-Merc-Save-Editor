@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.15.1
+- **Update notifications.** On startup the editor now quietly checks GitHub for a newer
+  release and, if one exists, shows a dismissible banner with **GitHub** and **Nexus**
+  download links. A new **Check for Updates** button in the toolbar does the same on
+  demand. The check runs in a background thread and is silent when you're offline — it
+  only contacts GitHub's public API and sends no information about you. It can be turned
+  off via `check_updates` in the config file.
+
 ## v1.15.0
 - **Dark mode.** New Theme selector in the toolbar: **System / Light / Dark**. System
   follows the Windows app theme automatically (and a manual choice is remembered between
