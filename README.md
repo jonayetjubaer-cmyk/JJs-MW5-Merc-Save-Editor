@@ -208,6 +208,11 @@ better because of you:
 
 ## Changelog
 
+**v1.15.2**
+- **Fix: added mechs now come out at the correct tonnage.** Stock-built adds weren't
+  applying the chassis's stock rear armor (a location-key mismatch), so they kept the
+  donor's rear armor and came out slightly under/over weight. Now fixed. (issues #12, #14)
+
 **v1.15.1**
 - **Update notifications** — checks GitHub for a newer release on startup and shows a
   dismissible banner with GitHub/Nexus download links; plus a **Check for Updates** button.

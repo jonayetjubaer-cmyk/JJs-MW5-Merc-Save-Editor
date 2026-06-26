@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.15.2
+- **Fix: added mechs now come out at the correct tonnage.** When building an added mech
+  from its chassis's factory-stock template, the editor wasn't applying the stock **rear**
+  armor — a location-key mismatch (`CenterTorsoRear` vs `CenterTorso`) meant the rear
+  values were never read, so the added mech kept the *donor* mech's rear armor instead.
+  That left every stock-built add slightly under or over weight (e.g. a Stormcrow
+  SCR-PRIME came out ~0.9t light). Rear armor is now read from the template, so an added
+  mech matches its real factory-stock tonnage. Front armor, weapons and equipment were
+  already correct. (issues #12 DallasSukerkin, #14 eXFDA)
+
 ## v1.15.1
 - **Update notifications.** On startup the editor now quietly checks GitHub for a newer
   release and, if one exists, shows a dismissible banner with **GitHub** and **Nexus**

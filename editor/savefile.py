@@ -709,7 +709,15 @@ class Mech:
                 self.set_armor(loc, float(v), installed=True)
                 self.set_armor(loc, float(v), installed=False)
         for loc in REAR_PARTS:
-            v = rear.get(loc[:-4])  # 'CenterTorsoRear' -> 'CenterTorso' (template key)
+            # Stock templates key rear armor by the full location name
+            # ('CenterTorsoRear'); loadouts exported by this editor strip the
+            # 'Rear' suffix ('CenterTorso'). Accept either so both stock-template
+            # adds and .mw5loadout imports apply rear armor. (Previously only the
+            # stripped key was tried, so stock adds kept the donor's rear armor
+            # and came out under/over tonnage -- issues #12, #14.)
+            v = rear.get(loc)
+            if v is None:
+                v = rear.get(loc[:-4])
             if v is not None:
                 self.set_armor(loc, float(v), installed=True)
                 self.set_armor(loc, float(v), installed=False)
