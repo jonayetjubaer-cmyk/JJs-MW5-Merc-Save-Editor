@@ -39,6 +39,9 @@ def _resource_path(name: str) -> str:
     return os.path.join(candidates[-1], name)
 from mech_catalog import LABELED, asset_name, display as mech_display, variant_code, chassis_info
 from item_catalog import CATALOG, CATEGORY_INVENTORY, WEAPONS, EQUIPMENT, AMMO
+from trait_catalog import (PILOT_TRAITS, MECH_TRAITS,
+                           dropdown_values as trait_dropdown_values,
+                           resolve as resolve_trait)
 from savefile import weapon_class, ARMOR_PARTS, REAR_PARTS
 from stock_templates import stock_types
 
@@ -970,7 +973,8 @@ class EditorApp(tk.Tk):
                 return
             mech = self._selected_mech()   # re-read with the new hardpoints
         LoadoutDialog(self, mech, catalog=self.cat, save=self.save,
-                      trait_names=self.traitcat.get("mech", []),
+                      trait_names=trait_dropdown_values(
+                          self.traitcat.get("mech", []), MECH_TRAITS),
                       on_apply=lambda: (self._refresh_mechs(),
                       self.status.set(f"Loadout updated for mech #{idx}. Remember to Save.")))
 
@@ -1173,7 +1177,8 @@ class EditorApp(tk.Tk):
         if pilot:
             for t in pilot.traits():
                 self.pilot_trait_list.insert("end", t)
-        self.pilot_trait_cb["values"] = self.traitcat.get("pilot", [])
+        self.pilot_trait_cb["values"] = trait_dropdown_values(
+            self.traitcat.get("pilot", []), PILOT_TRAITS)
 
     def on_add_pilot_trait(self):
         if not self._guard():
@@ -1181,7 +1186,7 @@ class EditorApp(tk.Tk):
         idx = self._selected_pilot_index()
         if idx is None:
             return self._need_selection()
-        name = self.pilot_trait_var.get().strip()
+        name = resolve_trait(self.pilot_trait_var.get())
         if not name:
             return messagebox.showinfo("Pick trait", "Choose or type a pilot trait asset name.")
         p = self.save.pilots()[idx]
@@ -1732,7 +1737,7 @@ class LoadoutDialog(tk.Toplevel):
             self.mtrait_list.insert("end", t)
 
     def _add_trait(self):
-        name = self.mtrait_var.get().strip()
+        name = resolve_trait(self.mtrait_var.get())
         if not name:
             return messagebox.showinfo("Pick trait", "Choose or type a mech trait asset name.")
         try:
