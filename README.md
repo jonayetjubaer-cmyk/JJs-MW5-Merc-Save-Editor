@@ -208,6 +208,11 @@ better because of you:
 
 ## Changelog
 
+**v1.16.0**
+- **Full trait catalog** — the Add-Trait dropdowns now list all 224 pilot/mech traits
+  (167 pilot + 57 mech) with friendly names, not just the ones your save had seen. Mod
+  traits your save references still merge in. (issue #15, data by FiendishDrWu)
+
 **v1.15.2**
 - **Fix: added mechs now come out at the correct tonnage.** Stock-built adds weren't
   applying the chassis's stock rear armor (a location-key mismatch), so they kept the

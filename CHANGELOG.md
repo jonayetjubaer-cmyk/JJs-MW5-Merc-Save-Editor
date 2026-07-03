@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.16.0
+- **Full pilot & mech trait catalog.** The Add-Trait dropdowns (Pilots tab, and mech
+  traits in Edit Loadout) now list all **224** known traits — **167 pilot** traits and
+  **57 Cantina mech** traits — each with a friendly name (e.g.
+  `Specialist_Laser_PilotTrait — Laser Specialist`), instead of only the traits your save
+  had already encountered. So academy Graduate traits, the Specialist/Affinity lines, and
+  the Cantina mech quirks are now selectable directly. Trait data contributed by
+  **FiendishDrWu** (issue #15). Mod-added traits your save references are still harvested
+  from the save and merged in, and any trait can still be typed in by asset name.
+
 ## v1.15.2
 - **Fix: added mechs now come out at the correct tonnage.** When building an added mech
   from its chassis's factory-stock template, the editor wasn't applying the stock **rear**
