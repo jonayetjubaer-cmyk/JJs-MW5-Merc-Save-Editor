@@ -954,6 +954,18 @@ class Pilot:
         self.persona = element.get("PersonaData")
 
     @property
+    def is_commander(self) -> bool:
+        """True if this pilot occupies a real player/commander slot. The
+        commander's LockedPlayerSlot is a Player slot (e.g. ::Player1); regular
+        hireable pilots have ::None. Deleting the commander can corrupt the
+        campaign, so the editor protects it -- but only the *actual* commander,
+        not merely whoever happens to be first in the roster."""
+        slot = self.element.get("LockedPlayerSlot")
+        if slot is None or slot.raw_payload is None:
+            return False
+        return slot.raw_payload.find(b"::None") == -1
+
+    @property
     def callsign(self) -> str:
         p = _path(self.persona.decoded, "Callsign")
         return read_text_property(p.raw_payload) if p else ""

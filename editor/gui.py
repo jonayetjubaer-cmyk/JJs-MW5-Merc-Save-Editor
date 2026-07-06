@@ -1278,9 +1278,16 @@ class EditorApp(tk.Tk):
             return self._need_selection()
         pilots = self.save.pilots()
         p = pilots[idx]
-        if idx == 0:
+        # Protect the actual commander (real player slot), not just whoever is
+        # first in the roster -- so regular pilots that happen to be listed
+        # first can still be removed (issue #17).
+        if p.is_commander:
             return messagebox.showwarning(
-                "Can't remove", "Won't remove the first pilot (your commander).")
+                "Can't remove",
+                f"Won't remove your commander ({p.callsign or 'Player 1'}). The "
+                "commander is tied to your campaign, and deleting it can corrupt "
+                "the save. (Back up first and restore the .bak if anything goes "
+                "wrong.)")
         if not messagebox.askyesno("Remove pilot", f"Remove pilot '{p.callsign}'?"):
             return
         self.save.remove_pilot(p.persona_id)
