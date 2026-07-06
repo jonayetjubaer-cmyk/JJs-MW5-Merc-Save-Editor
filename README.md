@@ -208,6 +208,10 @@ better because of you:
 
 ## Changelog
 
+**v1.16.1**
+- **Catalog refresh + fixes** (FiendishDrWu): Bullshark corrected from Berserker to 95t
+  Assault, and the KGC-001's large pulse laser moved to its correct EH3 hardpoint.
+
 **v1.16.0**
 - **Full trait catalog** — the Add-Trait dropdowns now list all 224 pilot/mech traits
   (167 pilot + 57 mech) with friendly names, not just the ones your save had seen. Mod

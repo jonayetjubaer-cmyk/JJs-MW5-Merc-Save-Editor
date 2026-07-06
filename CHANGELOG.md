@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.16.1
+- **Catalog data refresh + two fixes (FiendishDrWu).** The mech, item, stock-template and
+  trait catalogs were regenerated from FiendishDrWu's extraction tool. Two data errors are
+  corrected: the **Bullshark** was misclassified as the Berserker (now correctly 95t
+  Assault), and the **King Crab KGC-001's large pulse laser** was on the wrong hardpoint
+  (now at the correct right-torso EH3 slot). No functional or interface changes; coverage
+  is unchanged (552 mechs, 791 weapons, 552 stock templates, 224 traits).
+
 ## v1.16.0
 - **Full pilot & mech trait catalog.** The Add-Trait dropdowns (Pilots tab, and mech
   traits in Edit Loadout) now list all **224** known traits — **167 pilot** traits and
