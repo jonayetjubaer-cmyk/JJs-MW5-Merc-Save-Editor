@@ -64,6 +64,9 @@ jobs:
             --windows-icon-from-ico=editor/app_icon.ico `
             --include-data-files=editor/app_icon.ico=app_icon.ico `
             --include-data-files=editor/app_icon.png=app_icon.png `
+            --include-data-files=editor/item_catalog.json.gz=item_catalog.json.gz `
+            --include-data-files=editor/mech_catalog.json.gz=mech_catalog.json.gz `
+            --include-data-files=editor/trait_catalog.json.gz=trait_catalog.json.gz `
             --include-data-files=editor/stock_templates.json.gz=stock_templates.json.gz `
             --company-name="JJ (jonayetjubaer-cmyk)" `
             --product-name="JJ's MW5 Merc Save Editor" `

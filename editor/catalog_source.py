@@ -1,48 +1,61 @@
 """Where the editor's asset catalogs load from.
 
-Default: the built-in catalogs bundled with the editor (which are themselves
-Scarab output -- same data, same source). For mod support, Scarab (FiendishDrWu's
-catalog generator, issue #18) reads a user's MW5 install plus enabled mods and
-writes a catalog folder. Pointing the editor at that folder makes it load those
-catalogs instead, so modded items / mechs / traits are known to the editor.
+The catalogs are data files (Scarab's `.json.gz` format): `item_catalog`,
+`mech_catalog`, `trait_catalog`, and `stock_templates`. The editor bundles a
+trusted built-in set; the catalog loader modules (item_catalog / mech_catalog /
+trait_catalog) and the stock-template loader read them through here.
 
-IN-HOUSE TESTING SCOPE: this loads Scarab's *Python-format* output by prepending
-the chosen folder to sys.path, which works when running the editor from source
-(the current, source-based testing model). A data-file (JSON / json.gz) loader
-for the shipped binary is the planned follow-up, once Scarab's JSON format is
-finalized -- at which point the built-in catalogs move to accessible data files
-(the "Solution B" end state discussed in issue #18).
+For mod support (issue #18), Scarab -- FiendishDrWu's catalog generator -- can
+read a user's MW5 install plus enabled mods (using the editor's built-in
+catalogs as its base layer via `--catalog-input-dir`) and write an updated
+catalog folder. Pointing the editor at that folder makes it load those catalogs
+instead, so modded items / mechs / traits are known to the editor.
 
-`activate()` MUST run before any catalog module (item_catalog / mech_catalog /
-trait_catalog / stock_templates) is imported, so it is called at the very top of
-gui.py before those imports.
+Because these are *data files* read at runtime (not Python modules), this works
+identically from source and in the compiled binary. `activate()` records the
+chosen folder; `load_catalog()` resolves and parses a catalog, preferring an
+active external folder then the built-in bundle.
 """
 from __future__ import annotations
 
+import gzip
 import json
 import os
 import sys
 
 _CONFIG = os.path.join(os.path.expanduser("~"), ".jjmw5_save_editor.json")
-# Scarab's python-format catalog set; all must be present for a folder to count.
-REQUIRED = ("item_catalog.py", "mech_catalog.py", "trait_catalog.py",
-            "stock_templates.json.gz")
-# env var the stock-template loader reads to find an external stock_templates.json.gz
+# Catalogs the editor needs; a folder must provide all of them (as .json.gz,
+# or plain .json) to count as a usable external catalog source.
+REQUIRED = ("item_catalog", "mech_catalog", "trait_catalog", "stock_templates")
+# env var the stock-template loader also reads to find an external folder
 ACTIVE_ENV = "MW5EDITOR_ACTIVE_CATALOG_DIR"
-
-# This mechanism prepends a folder to sys.path so Python imports the catalog
-# *modules* from it. That works from source, but NOT in the Nuitka-built exe,
-# where the catalog modules are compiled into the binary and take precedence
-# over sys.path. So when running compiled we do nothing -- the data-file (JSON)
-# loader is the path there (Solution B, issue #18). This keeps the shipped
-# binary honest: it never claims an external catalog it can't actually load.
-_IS_COMPILED = "__compiled__" in globals() or bool(getattr(sys, "frozen", False))
 
 _active: str | None = None
 
 
+def _builtin_dirs() -> list[str]:
+    """Dirs the bundled catalogs may live in (source dir, and the exe dir /
+    _MEIPASS for a frozen build)."""
+    out = []
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        out.append(meipass)
+    out.append(os.path.dirname(os.path.abspath(__file__)))
+    out.append(os.path.dirname(os.path.abspath(sys.argv[0])))
+    return out
+
+
+def _find(dirs, basename) -> str | None:
+    for d in dirs:
+        for ext in (".json.gz", ".json"):
+            p = os.path.join(d, basename + ext)
+            if os.path.exists(p):
+                return p
+    return None
+
+
 def configured_dir() -> str | None:
-    """The external catalog folder from the env var (highest priority, handy for
+    """External catalog folder from the env var (highest priority, handy for
     testing) or the config file, or None to use the built-in catalogs."""
     d = os.environ.get("MW5EDITOR_CATALOG_DIR")
     if d:
@@ -55,27 +68,21 @@ def configured_dir() -> str | None:
 
 
 def is_valid(d: str | None) -> bool:
-    """True if `d` is a folder containing a complete Scarab python catalog set."""
+    """True if `d` is a folder providing all required catalogs (.json.gz/.json)."""
     return bool(d) and os.path.isdir(d) and all(
-        os.path.exists(os.path.join(d, f)) for f in REQUIRED)
+        _find([d], b) for b in REQUIRED)
 
 
 def activate() -> str | None:
-    """If a valid external catalog folder is configured, prepend it to sys.path
-    (so the catalog modules import from there) and record it for the
-    stock-template loader. Returns the active folder, or None for built-in.
-    Falls back to built-in silently on any problem."""
+    """If a valid external catalog folder is configured, record it so the
+    catalog loaders read from it. Returns the active folder, or None for
+    built-in. Falls back to built-in silently on any problem."""
     global _active
-    if _IS_COMPILED:
-        return None  # data-file loader handles the shipped binary (see above)
     try:
         d = configured_dir()
         if is_valid(d):
-            d = os.path.abspath(d)
-            if d not in sys.path:
-                sys.path.insert(0, d)
-            os.environ[ACTIVE_ENV] = d
-            _active = d
+            _active = os.path.abspath(d)
+            os.environ[ACTIVE_ENV] = _active
     except Exception:
         _active = None
     return _active
@@ -84,6 +91,30 @@ def activate() -> str | None:
 def active_dir() -> str | None:
     """The external catalog folder currently in use this session, or None."""
     return _active
+
+
+def catalog_path(basename: str) -> str | None:
+    """Resolve a catalog data file by basename (e.g. 'item_catalog'), preferring
+    the active external folder, then the built-in bundle. Accepts .json.gz then
+    .json. Returns the path, or None if not found anywhere."""
+    dirs = ([_active] if _active else []) + _builtin_dirs()
+    return _find(dirs, basename)
+
+
+def load_catalog(basename: str):
+    """Parse a catalog data file to a Python object (dict), or None if missing
+    or unreadable. Handles both .json.gz and .json."""
+    p = catalog_path(basename)
+    if not p:
+        return None
+    try:
+        if p.endswith(".gz"):
+            with gzip.open(p, "rt", encoding="utf-8") as f:
+                return json.load(f)
+        with open(p, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return None
 
 
 def set_dir(path: str | None) -> bool:
