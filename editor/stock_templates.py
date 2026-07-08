@@ -22,6 +22,11 @@ _FILE = "stock_templates.json.gz"
 
 def _candidates():
     out = []
+    # An external Scarab catalog folder (set by catalog_source.activate()) takes
+    # priority so its stock_templates.json.gz overrides the built-in one.
+    ext = os.environ.get("MW5EDITOR_ACTIVE_CATALOG_DIR")
+    if ext:
+        out.append(ext)
     meipass = getattr(sys, "_MEIPASS", None)
     if meipass:
         out.append(meipass)

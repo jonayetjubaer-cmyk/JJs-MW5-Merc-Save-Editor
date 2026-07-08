@@ -19,6 +19,11 @@ import webbrowser
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, simpledialog
 
+# Resolve the catalog source (built-in vs an external Scarab folder) BEFORE any
+# catalog module is imported -- see catalog_source and issue #18.
+import catalog_source
+catalog_source.activate()
+
 from savefile import SaveFile, SKILLS, CAPPED_SKILLS, MAX_SKILL_CAP
 
 
@@ -329,6 +334,12 @@ class EditorApp(tk.Tk):
         ttk.Button(bar, text="Check for Updates",
                    command=lambda: self._check_updates_async(manual=True)).pack(side="left")
 
+        # catalog source (right side): built-in, or an external Scarab folder.
+        # Hidden for regular users while mod support is in-house testing (issue
+        # #18); appears once a catalog folder is configured (env var or saved).
+        if catalog_source.configured_dir():
+            ttk.Button(bar, text="Catalog…", command=self.on_catalog_source).pack(side="right", padx=(8, 0))
+
         # theme selector (right side): System follows the Windows app theme
         ttk.Label(bar, text="Theme:").pack(side="right", padx=(0, 4))
         theme_cb = ttk.Combobox(bar, width=8, state="readonly",
@@ -337,6 +348,62 @@ class EditorApp(tk.Tk):
         theme_cb.set(self._theme_pref.get().capitalize())
         theme_cb.pack(side="right")
         theme_cb.bind("<<ComboboxSelected>>", self._on_theme_change)
+
+    # -- catalog source ----------------------------------------------------
+    def on_catalog_source(self):
+        """Choose where catalogs load from: the built-in set, or an external
+        Scarab-generated folder for mod support (issue #18). Applied on restart."""
+        active = catalog_source.active_dir()
+        configured = catalog_source.configured_dir()
+
+        dlg = tk.Toplevel(self)
+        dlg.title("Catalog source")
+        dlg.transient(self)
+        dlg.resizable(False, False)
+        frm = ttk.Frame(dlg)
+        frm.pack(fill="both", expand=True, padx=12, pady=12)
+
+        src = "External Scarab folder" if active else "Built-in catalogs"
+        ttk.Label(frm, text=f"In use now: {src}", font=("", 10, "bold")).pack(anchor="w")
+        if active:
+            ttk.Label(frm, text=active, style="Muted.TLabel", wraplength=400).pack(anchor="w")
+        elif configured:
+            ttk.Label(frm, text=f"Configured but not applied (folder incomplete?):\n{configured}",
+                      style="Muted.TLabel", wraplength=400).pack(anchor="w")
+        ttk.Label(frm, wraplength=400, style="Muted.TLabel", justify="left",
+                  text="Point the editor at a Scarab output folder to use mod-aware "
+                       "catalogs (items, mechs, traits, stock templates) built from your "
+                       "MW5 install and enabled mods. Changes take effect the next time "
+                       "you launch the editor.").pack(anchor="w", pady=(6, 10))
+
+        def choose():
+            d = filedialog.askdirectory(title="Select a Scarab catalog folder", parent=dlg)
+            if not d:
+                return
+            if not catalog_source.is_valid(d):
+                return messagebox.showwarning(
+                    "Not a catalog folder",
+                    "That folder doesn't contain a complete catalog set "
+                    "(item_catalog.py, mech_catalog.py, trait_catalog.py, "
+                    "stock_templates.json.gz). Run Scarab to generate one first.",
+                    parent=dlg)
+            catalog_source.set_dir(d)
+            messagebox.showinfo("Catalog folder set",
+                                "Saved. Restart the editor to load these catalogs.",
+                                parent=dlg)
+            dlg.destroy()
+
+        def reset():
+            catalog_source.set_dir(None)
+            messagebox.showinfo("Reverted to built-in",
+                                "Restart the editor to apply.", parent=dlg)
+            dlg.destroy()
+
+        btns = ttk.Frame(frm)
+        btns.pack(fill="x")
+        ttk.Button(btns, text="Choose Scarab folder…", command=choose).pack(side="left")
+        ttk.Button(btns, text="Reset to built-in", command=reset).pack(side="left", padx=6)
+        ttk.Button(btns, text="Close", command=dlg.destroy).pack(side="right")
 
     # -- update check ------------------------------------------------------
     def _build_update_banner(self):
