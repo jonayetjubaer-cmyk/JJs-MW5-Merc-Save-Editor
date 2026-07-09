@@ -568,12 +568,20 @@ class Mech:
         if p is not None:
             p.raw_payload = write_float(value)  # FloatProperty payload is fixed 4 bytes
 
-    def max_armor(self):
-        """Set CurrentArmor = InstalledArmor for every location (front + rear)."""
+    def repair_armor(self):
+        """Restore CurrentArmor to InstalledArmor for every location."""
         for loc in ARMOR_PARTS:
             self.set_armor(loc, self.armor_value(loc, installed=True))
         for loc in REAR_PARTS:
             self.set_armor(loc, self.armor_value(loc, installed=True))
+
+    def max_armor(self):
+        """Backward-compatible alias for repair_armor().
+
+        Historical name only: this does not apply the chassis's MDA maxArmor
+        caps. Current armor may never exceed installed armor.
+        """
+        self.repair_armor()
 
     def clear_loadout(self):
         """Empty the hardpoint-keyed loadout arrays (installed weapons + weapon

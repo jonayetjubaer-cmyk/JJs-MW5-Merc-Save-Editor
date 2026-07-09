@@ -48,7 +48,7 @@ from trait_catalog import (PILOT_TRAITS, MECH_TRAITS,
                            dropdown_values as trait_dropdown_values,
                            resolve as resolve_trait)
 from savefile import weapon_class, ARMOR_PARTS, REAR_PARTS
-from stock_templates import stock_types
+from stock_templates import max_armor_caps, stock_types
 
 HARDPOINT_LABEL = {"EH": "Energy", "BH": "Ballistic", "MH": "Missile",
                    "AH": "Anti-Missile", "Melee": "Melee"}
@@ -1546,6 +1546,7 @@ class LoadoutDialog(tk.Toplevel):
             ev = tk.StringVar(value="(empty)" if slot.is_empty else slot.equip_name)
             self.eq_widgets.append((slot, ev))
         self.armor_vars = {}     # location -> StringVar
+        self.max_armor = max_armor_caps(mech.chassis) or {}
         self._chain_vars = [tk.BooleanVar(value=v) for v in mech.chain_fire_groups()]
         self.view_mode = tk.StringVar(value=getattr(LoadoutDialog, "_last_mode", "body"))
 
@@ -1621,19 +1622,37 @@ class LoadoutDialog(tk.Toplevel):
 
         # armor
         ttk.Separator(content, orient="horizontal").pack(fill="x", padx=10, pady=8)
-        ttk.Label(content, text="Armor (current)", font=("", 10, "bold")).pack(anchor="w", padx=10)
+        ttk.Label(content, text="Armor (current / installed / chassis max)",
+                  font=("", 10, "bold")).pack(anchor="w", padx=10)
+        ttk.Label(content,
+                  text="MDA chassis max is a physical location cap; torso max is shared "
+                       "between front and rear armor.",
+                  style="Muted.TLabel").pack(anchor="w", padx=10)
         af = ttk.Frame(content)
         af.pack(fill="x", padx=10, pady=4)
         locs = ARMOR_PARTS + REAR_PARTS
         for i, loc in enumerate(locs):
-            row, col = divmod(i, 4)
+            row, col = divmod(i, 2)
             cell = ttk.Frame(af)
             cell.grid(row=row, column=col, sticky="w", padx=4, pady=2)
-            ttk.Label(cell, text=loc, width=15).pack(side="left")
+            ttk.Label(cell, text=loc, width=17).pack(side="left")
             v = tk.StringVar(value=str(int(self.mech.armor_value(loc))))
             ttk.Entry(cell, textvariable=v, width=6).pack(side="left")
             self.armor_vars[loc] = v
-        ttk.Button(content, text="Max armor (= installed)", command=self._max_armor).pack(anchor="w", padx=10, pady=2)
+
+            installed = int(self.mech.armor_value(loc, installed=True))
+            cap_key = loc[:-4] if loc in REAR_PARTS else loc
+            cap = self.max_armor.get(cap_key)
+            detail = f"installed {installed}"
+            if cap is not None:
+                detail += f" · max {int(float(cap))}"
+                if cap_key in ("CenterTorso", "LeftTorso", "RightTorso"):
+                    detail += " total F+R"
+            ttk.Label(cell, text=detail, width=31, style="Muted.TLabel").pack(
+                side="left", padx=(4, 0))
+
+        ttk.Button(content, text="Repair armor (= installed)",
+                   command=self._repair_armor).pack(anchor="w", padx=10, pady=2)
 
         # traits (Cantina-style mech quirks) -- experimental
         if self.save is not None:
@@ -1830,7 +1849,7 @@ class LoadoutDialog(tk.Toplevel):
         if self.save.remove_mech_trait(self.mech, name, flush=False):
             self._refresh_traits()
 
-    def _max_armor(self):
+    def _repair_armor(self):
         for loc in ARMOR_PARTS + REAR_PARTS:
             self.armor_vars[loc].set(str(int(self.mech.armor_value(loc, installed=True))))
 
@@ -1859,13 +1878,22 @@ class LoadoutDialog(tk.Toplevel):
                 atype = ename_to_type.get(choice, slot.equip_type)
                 if atype and atype != "None":
                     slot.set_equipment(atype, choice)
-        # armor
+        # armor: current health cannot exceed the installed allocation
         try:
-            for loc, v in self.armor_vars.items():
-                self.mech.set_armor(loc, float(int(v.get())))
+            armor_values = {loc: float(int(v.get())) for loc, v in self.armor_vars.items()}
         except ValueError:
             messagebox.showerror("Invalid", "Armor values must be whole numbers.")
             return
+        for loc, value in armor_values.items():
+            installed = self.mech.armor_value(loc, installed=True)
+            if value < 0 or value > installed:
+                messagebox.showerror(
+                    "Invalid armor",
+                    f"{loc} current armor must be between 0 and its installed armor "
+                    f"({int(installed)}).")
+                return
+        for loc, value in armor_values.items():
+            self.mech.set_armor(loc, value)
         # chain-fire (per group 1-6)
         for gi, v in enumerate(self._chain_vars, start=1):
             self.mech.set_chain_fire_group(gi, v.get())
