@@ -2,11 +2,12 @@
 __pycache__/
 *.pyc
 *.pyo
+.nuitka-cache/
 
 # PyInstaller build artifacts
 /build/
 *.spec
-
+build_out/
 # Save files — never commit personal game data
 *.sav
 *.bak
