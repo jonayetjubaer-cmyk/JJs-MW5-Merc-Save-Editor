@@ -664,6 +664,18 @@ class EditorApp(tk.Tk):
                    command=lambda: (self.cbills_var.set("2000000000"), self.on_set_cbills())
                    ).grid(row=0, column=3, padx=4)
 
+        ttk.Label(top, text="Campaign Date:").grid(row=1, column=0, sticky="w", pady=(6, 0))
+        self.campaign_date_current_var = tk.StringVar(value="N/A")
+        ttk.Label(top, textvariable=self.campaign_date_current_var).grid(
+            row=1, column=1, sticky="w", padx=4, pady=(6, 0))
+        self.campaign_date_var = tk.StringVar()
+        ttk.Entry(top, textvariable=self.campaign_date_var, width=12).grid(
+            row=1, column=2, sticky="w", padx=4, pady=(6, 0))
+        ttk.Button(top, text="Set Date", command=self.on_set_campaign_date).grid(
+            row=1, column=3, sticky="w", padx=4, pady=(6, 0))
+        ttk.Label(top, text="YYYY.MM.DD", style="Muted.TLabel").grid(
+            row=1, column=4, sticky="w", padx=4, pady=(6, 0))
+
         ttk.Separator(self.inv_tab, orient="horizontal").pack(fill="x", padx=4, pady=2)
 
         # Add-item row (mirrors the classic editor: Item / Count / Type / Add)
@@ -1364,6 +1376,8 @@ class EditorApp(tk.Tk):
     # -- inventory actions -------------------------------------------------
     def _refresh_inventory(self):
         self.cbills_var.set(str(self.save.cbills))
+        self.campaign_date_current_var.set(self.save.campaign_date_text)
+        self.campaign_date_var.set(self.save.campaign_date_text)
         rows = [(it.asset_type, it.asset_name, it.count, "weapon")
                 for it in self.save.weapon_inventory()]
         rows += [(it.asset_type, it.asset_name, it.count, "equipment")
@@ -1399,6 +1413,17 @@ class EditorApp(tk.Tk):
         except ValueError:
             return messagebox.showerror("Invalid", "C-Bills must be a whole number.")
         self.status.set(f"Set C-Bills to {self.save.cbills:,}. Remember to Save.")
+
+    def on_set_campaign_date(self):
+        if not self._guard():
+            return
+        try:
+            self.save.set_campaign_date_text(self.campaign_date_var.get())
+        except ValueError as e:
+            return messagebox.showerror("Invalid", str(e))
+        self.campaign_date_current_var.set(self.save.campaign_date_text)
+        self.campaign_date_var.set(self.save.campaign_date_text)
+        self.status.set(f"Set campaign date to {self.save.campaign_date_text}. Remember to Save.")
 
     def on_add_item(self):
         if not self._guard():

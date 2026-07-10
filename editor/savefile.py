@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import base64
 import copy
+import datetime
 import json
 import struct
 import uuid
@@ -53,6 +54,10 @@ def read_int(payload: bytes) -> int:
 
 def write_int(v: int) -> bytes:
     return struct.pack("<i", v)
+
+
+def read_int64(payload: bytes) -> int:
+    return struct.unpack("<q", payload[:8])[0]
 
 
 def read_float(payload: bytes) -> float:
@@ -118,6 +123,13 @@ def _set_leaf(prop: Property, new_payload: bytes):
     prop.raw_header = w.bytes()
     prop.raw_payload = new_payload
     prop.decoded = None
+
+
+def _int_property(name: str, value: int) -> Property:
+    w = Writer()
+    w.i64(4)
+    w.write(b"\x00")
+    return Property(name, "IntProperty", w.bytes(), write_int(value), None)
 
 
 def _path(plist: PropertyList, *names):
@@ -1231,6 +1243,58 @@ class SaveFile:
 
     def _storage_array(self) -> ArrayValue:
         return self.model("MechStorageModel").plist.get("MechStorageList").decoded
+
+    # -- campaign date ----------------------------------------------------
+    @property
+    def starting_datetime(self) -> datetime.datetime:
+        p = self.model("TimelineModel").plist.get("StartingDateTicks")
+        if p is None:
+            raise KeyError("TimelineModel.StartingDateTicks")
+        ticks = read_int64(p.raw_payload)
+        return datetime.datetime(1, 1, 1) + datetime.timedelta(microseconds=ticks // 10)
+
+    @property
+    def days_elapsed(self) -> int:
+        p = self.model("TimelineModel").plist.get("TotalTimeElapsed")
+        return read_int(p.raw_payload) if p else 0
+
+    @days_elapsed.setter
+    def days_elapsed(self, value: int):
+        tm = self.model("TimelineModel").plist
+        p = tm.get("TotalTimeElapsed")
+        if p is not None:
+            _set_leaf(p, write_int(value))
+            return
+        props = tm.properties
+        new_prop = _int_property("TotalTimeElapsed", value)
+        for i, prop in enumerate(props):
+            if prop.name == "StartingDateTicks":
+                props.insert(i + 1, new_prop)
+                return
+        props.append(new_prop)
+
+    @property
+    def campaign_date(self) -> datetime.date:
+        return (self.starting_datetime + datetime.timedelta(days=self.days_elapsed)).date()
+
+    @property
+    def campaign_date_text(self) -> str:
+        return self.campaign_date.strftime("%Y.%m.%d")
+
+    def set_campaign_date_text(self, value: str):
+        text = value.strip()
+        parts = text.split(".")
+        if len(parts) != 3 or len(parts[0]) != 4 or len(parts[1]) != 2 or len(parts[2]) != 2:
+            raise ValueError("Campaign date must use YYYY.MM.DD format.")
+        try:
+            target = datetime.datetime.strptime(text, "%Y.%m.%d").date()
+        except ValueError:
+            raise ValueError("Campaign date must be a real date in YYYY.MM.DD format.")
+        start = self.starting_datetime.date()
+        days = (target - start).days
+        if days < 0:
+            raise ValueError(f"Campaign date cannot be before {start.strftime('%Y.%m.%d')}.")
+        self.days_elapsed = days
 
     def _all_mechs(self) -> list[Mech]:
         """Every MechLoadoutWrapper that holds a MarketItemMech -- active-bay
