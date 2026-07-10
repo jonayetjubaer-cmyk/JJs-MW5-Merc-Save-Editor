@@ -2,9 +2,13 @@
 MWMechDataAsset / MWMechLoadoutAsset assets, contributed in GitHub issue #6).
 
 One template per chassis (keyed by MDA asset name, e.g. 'CN9-A_MDA') giving the
-chassis's real stock armor, structure, weapons, weapon groups and equipment.
-Used to populate an added/cold-storage mech's ItemData with correct stock data
-instead of an approximate clone of an unrelated donor chassis.
+chassis's real stock armor, MDA-derived max armor, structure, weapons, weapon
+groups and equipment. Stock armor is the factory-installed allocation; maxArmor
+is separate read-only chassis-cap metadata from the MDA.
+
+Stock loadout fields are used to populate an added/cold-storage mech's ItemData
+with correct stock data instead of an approximate clone of an unrelated donor
+chassis.
 
 Only asset names + numeric stats are stored (facts about the game), the same
 clean-room category as the item/chassis catalogs. Lazy-loaded on first use.
@@ -58,6 +62,19 @@ def stock_template(chassis: str):
         return None
     mda = chassis if chassis.endswith("_MDA") else chassis + "_MDA"
     return _load().get(mda)
+
+
+def max_armor_caps(chassis: str) -> dict[str, float] | None:
+    """MDA-derived per-location chassis armor caps, or None if unavailable.
+
+    Torso values are combined front+rear caps. These are chassis limits, not the
+    mech's installed armor allocation and not its current armor health.
+    """
+    tpl = stock_template(chassis)
+    if tpl is None:
+        return None
+    caps = tpl.get("maxArmor")
+    return caps if isinstance(caps, dict) and caps else None
 
 
 def available() -> bool:
