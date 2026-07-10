@@ -113,6 +113,14 @@ To be sure and carry on:
 Yes — the mech and item lists include vanilla + DLC content. The game safely
 ignores anything from a DLC you don't own.
 
+**Does it support modded items, mechs, or traits?**
+Experimental support is being tested through
+[Scarab](https://github.com/FiendishDrWu/Scarab), FiendishDrWu's standalone
+catalog generator. The **Catalogs...** button can run Scarab v1.7.4 against your
+MW5 install and enabled mods, then load the generated `.json.gz` catalogs on the
+next launch. The normal built-in catalogs are still used unless you explicitly
+generate or choose a Scarab catalog folder.
+
 **What's the difference between an "exact" and "approximate" added mech?**
 If you already own a mech of that chassis, Add Mech makes a perfect duplicate.
 If you don't, a mech's true layout (engine, hardpoints, max armor) lives in the

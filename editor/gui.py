@@ -23,6 +23,7 @@ from tkinter import ttk, filedialog, messagebox, simpledialog
 # catalog module is imported -- see catalog_source and issue #18.
 import catalog_source
 catalog_source.activate()
+import scarab_integration
 
 from savefile import SaveFile, SKILLS, CAPPED_SKILLS, MAX_SKILL_CAP
 
@@ -334,11 +335,7 @@ class EditorApp(tk.Tk):
         ttk.Button(bar, text="Check for Updates",
                    command=lambda: self._check_updates_async(manual=True)).pack(side="left")
 
-        # catalog source (right side): built-in, or an external Scarab folder.
-        # Hidden for regular users while mod support is in-house testing (issue
-        # #18); appears once a catalog folder is configured (env var or saved).
-        if catalog_source.configured_dir():
-            ttk.Button(bar, text="Catalog…", command=self.on_catalog_source).pack(side="right", padx=(8, 0))
+        ttk.Button(bar, text="Catalogs...", command=self.on_catalog_source).pack(side="right", padx=(8, 0))
 
         # theme selector (right side): System follows the Windows app theme
         ttk.Label(bar, text="Theme:").pack(side="right", padx=(0, 4))
@@ -351,32 +348,83 @@ class EditorApp(tk.Tk):
 
     # -- catalog source ----------------------------------------------------
     def on_catalog_source(self):
-        """Choose where catalogs load from: the built-in set, or an external
-        Scarab-generated folder for mod support (issue #18). Applied on restart."""
+        """Generate or select mod-aware Scarab catalogs. Applied on restart."""
         active = catalog_source.active_dir()
         configured = catalog_source.configured_dir()
+        trusted = catalog_source.builtin_dir()
 
         dlg = tk.Toplevel(self)
-        dlg.title("Catalog source")
+        dlg.title("Catalogs and Mods")
         dlg.transient(self)
         dlg.resizable(False, False)
         frm = ttk.Frame(dlg)
         frm.pack(fill="both", expand=True, padx=12, pady=12)
+        frm.columnconfigure(1, weight=1)
+
+        scarab_var = tk.StringVar(value=load_pref("scarab_exe", ""))
+        mw5_var = tk.StringVar(value=load_pref("mw5_dir", ""))
+        output_var = tk.StringVar(value=load_pref("scarab_output", scarab_integration.DEFAULT_OUTPUT))
+        report_var = tk.BooleanVar(value=bool(load_pref("scarab_build_report", False)))
+        status_var = tk.StringVar(value="")
 
         src = "External Scarab folder" if active else "Built-in catalogs"
-        ttk.Label(frm, text=f"In use now: {src}", font=("", 10, "bold")).pack(anchor="w")
-        if active:
-            ttk.Label(frm, text=active, style="Muted.TLabel", wraplength=400).pack(anchor="w")
-        elif configured:
-            ttk.Label(frm, text=f"Configured but not applied (folder incomplete?):\n{configured}",
-                      style="Muted.TLabel", wraplength=400).pack(anchor="w")
-        ttk.Label(frm, wraplength=400, style="Muted.TLabel", justify="left",
-                  text="Point the editor at a Scarab output folder to use mod-aware "
-                       "catalogs (items, mechs, traits, stock templates) built from your "
-                       "MW5 install and enabled mods. Changes take effect the next time "
-                       "you launch the editor.").pack(anchor="w", pady=(6, 10))
+        ttk.Label(frm, text=f"In use now: {src}", font=("", 10, "bold")).grid(
+            row=0, column=0, columnspan=3, sticky="w")
+        detail = active or configured or "No external catalog folder configured."
+        ttk.Label(frm, text=detail, style="Muted.TLabel", wraplength=560).grid(
+            row=1, column=0, columnspan=3, sticky="w", pady=(2, 8))
+        ttk.Label(
+            frm,
+            text=("Scarab support is experimental. Use Scarab "
+                  f"{scarab_integration.SUPPORTED_SCARAB} to generate "
+                  "item_catalog.json.gz, mech_catalog.json.gz, "
+                  "trait_catalog.json.gz, and stock_templates.json.gz from "
+                  "your MW5 install and enabled mods."),
+            style="Muted.TLabel",
+            wraplength=560,
+            justify="left",
+        ).grid(row=2, column=0, columnspan=3, sticky="w", pady=(0, 10))
 
-        def choose():
+        def add_row(row, label, var, command, button_text="Browse..."):
+            ttk.Label(frm, text=label).grid(row=row, column=0, sticky="w", pady=3)
+            ttk.Entry(frm, textvariable=var, width=62).grid(
+                row=row, column=1, sticky="ew", padx=(8, 6), pady=3)
+            ttk.Button(frm, text=button_text, command=command).grid(
+                row=row, column=2, sticky="ew", pady=3)
+
+        def choose_scarab():
+            p = filedialog.askopenfilename(
+                title="Select scarab.exe",
+                parent=dlg,
+                filetypes=[("Scarab executable", "scarab.exe"), ("Executable", "*.exe"), ("All files", "*.*")],
+            )
+            if p:
+                scarab_var.set(p)
+
+        def choose_mw5():
+            d = filedialog.askdirectory(title="Select MW5 game folder", parent=dlg)
+            if d:
+                mw5_var.set(d)
+
+        add_row(3, "Scarab exe", scarab_var, choose_scarab)
+        add_row(4, "MW5 game folder", mw5_var, choose_mw5)
+        ttk.Label(frm, text="Output folder").grid(row=5, column=0, sticky="w", pady=3)
+        ttk.Entry(frm, textvariable=output_var, width=62).grid(
+            row=5, column=1, sticky="ew", padx=(8, 6), pady=3)
+        ttk.Label(frm, text="relative to scarab.exe", style="Muted.TLabel").grid(
+            row=5, column=2, sticky="w", pady=3)
+        ttk.Checkbutton(frm, text="Write catalog_build_report.json", variable=report_var).grid(
+            row=6, column=1, sticky="w", padx=(8, 0), pady=(2, 8))
+
+        ttk.Separator(frm).grid(row=7, column=0, columnspan=3, sticky="ew", pady=(4, 10))
+
+        def save_settings():
+            save_pref("scarab_exe", scarab_var.get().strip())
+            save_pref("mw5_dir", mw5_var.get().strip())
+            save_pref("scarab_output", output_var.get().strip() or scarab_integration.DEFAULT_OUTPUT)
+            save_pref("scarab_build_report", bool(report_var.get()))
+
+        def choose_existing():
             d = filedialog.askdirectory(title="Select a Scarab catalog folder", parent=dlg)
             if not d:
                 return
@@ -384,8 +432,9 @@ class EditorApp(tk.Tk):
                 return messagebox.showwarning(
                     "Not a catalog folder",
                     "That folder doesn't contain a complete catalog set "
-                    "(item_catalog.py, mech_catalog.py, trait_catalog.py, "
-                    "stock_templates.json.gz). Run Scarab to generate one first.",
+                    "(item_catalog.json.gz, mech_catalog.json.gz, "
+                    "trait_catalog.json.gz, stock_templates.json.gz). "
+                    "Plain .json catalogs are also accepted.",
                     parent=dlg)
             catalog_source.set_dir(d)
             messagebox.showinfo("Catalog folder set",
@@ -399,11 +448,65 @@ class EditorApp(tk.Tk):
                                 "Restart the editor to apply.", parent=dlg)
             dlg.destroy()
 
+        def open_output():
+            try:
+                p = scarab_integration.output_dir_for(scarab_var.get(), output_var.get())
+            except Exception:
+                p = ""
+            if p and os.path.isdir(p):
+                os.startfile(p)
+            else:
+                messagebox.showinfo("Output folder", "The output folder does not exist yet.", parent=dlg)
+
+        def finish_generate(result):
+            generate_btn.configure(state="normal")
+            close_btn.configure(state="normal")
+            status_var.set(result.message)
+            self.status.set(result.message)
+            if not result.ok:
+                return messagebox.showerror("Scarab failed", result.message, parent=dlg)
+            catalog_source.set_dir(result.output_dir)
+            messagebox.showinfo(
+                "Catalog generated",
+                f"{result.message}\n\nSaved for next launch:\n{result.output_dir}",
+                parent=dlg)
+
+        def generate():
+            save_settings()
+            if not trusted:
+                return messagebox.showerror(
+                    "Built-in catalogs missing",
+                    "The editor could not find its bundled trusted catalog files.",
+                    parent=dlg)
+            generate_btn.configure(state="disabled")
+            close_btn.configure(state="disabled")
+            status_var.set("Running Scarab...")
+            self.status.set("Running Scarab catalog generation...")
+
+            def worker():
+                result = scarab_integration.run_scarab(
+                    scarab_var.get(),
+                    mw5_var.get(),
+                    output_var.get(),
+                    trusted,
+                    build_report=report_var.get(),
+                )
+                self.after(0, lambda: finish_generate(result))
+
+            threading.Thread(target=worker, daemon=True).start()
+
         btns = ttk.Frame(frm)
-        btns.pack(fill="x")
-        ttk.Button(btns, text="Choose Scarab folder…", command=choose).pack(side="left")
-        ttk.Button(btns, text="Reset to built-in", command=reset).pack(side="left", padx=6)
-        ttk.Button(btns, text="Close", command=dlg.destroy).pack(side="right")
+        btns.grid(row=8, column=0, columnspan=3, sticky="ew")
+        generate_btn = ttk.Button(btns, text="Generate with Scarab", command=generate)
+        generate_btn.pack(side="left")
+        ttk.Button(btns, text="Choose Existing...", command=choose_existing).pack(side="left", padx=6)
+        ttk.Button(btns, text="Open Output", command=open_output).pack(side="left")
+        ttk.Button(btns, text="Reset to Built-in", command=reset).pack(side="left", padx=6)
+        close_btn = ttk.Button(btns, text="Close", command=dlg.destroy)
+        close_btn.pack(side="right")
+
+        ttk.Label(frm, textvariable=status_var, style="Muted.TLabel", wraplength=560).grid(
+            row=9, column=0, columnspan=3, sticky="w", pady=(8, 0))
 
     # -- update check ------------------------------------------------------
     def _build_update_banner(self):

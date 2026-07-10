@@ -73,6 +73,14 @@ def is_valid(d: str | None) -> bool:
         _find([d], b) for b in REQUIRED)
 
 
+def builtin_dir() -> str | None:
+    """The bundled trusted catalog folder, or None if it cannot be found."""
+    for d in _builtin_dirs():
+        if is_valid(d):
+            return os.path.abspath(d)
+    return None
+
+
 def activate() -> str | None:
     """If a valid external catalog folder is configured, record it so the
     catalog loaders read from it. Returns the active folder, or None for

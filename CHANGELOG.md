@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+- **Experimental Scarab catalog generation UI.** The toolbar now exposes a
+  **Catalogs...** dialog for issue #18 testing. It can remember a Scarab
+  executable, MW5 game folder, relative output folder, optionally request a
+  `catalog_build_report.json`, run Scarab v1.7.4 with the editor's trusted
+  `.json.gz` catalog bundle as `--catalog-input-dir`, validate the generated
+  catalog set, and save it as the catalog source for the next launch. Scarab
+  v1.7.4 is required so generated stock templates retain MDA chassis maximum
+  armor metadata.
+
 ## v1.16.1
 - **Catalog data refresh + two fixes (FiendishDrWu).** The mech, item, stock-template and
   trait catalogs were regenerated from FiendishDrWu's extraction tool. Two data errors are
