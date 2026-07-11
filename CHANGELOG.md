@@ -1,14 +1,21 @@
 # Changelog
 
-## Unreleased
-- **Experimental Scarab catalog generation UI.** The toolbar now exposes a
-  **Catalogs...** dialog for issue #18 testing. It can remember a Scarab
-  executable, MW5 game folder, relative output folder, optionally request a
-  `catalog_build_report.json`, run Scarab v1.7.4 with the editor's trusted
-  `.json.gz` catalog bundle as `--catalog-input-dir`, validate the generated
-  catalog set, and save it as the catalog source for the next launch. Scarab
-  v1.7.4 is required so generated stock templates retain MDA chassis maximum
-  armor metadata.
+## v1.17.0
+- **Experimental mod catalog support through Scarab.** The new **Catalogs...**
+  dialog can run FiendishDrWu's standalone catalog generator against the user's
+  MW5 install and enabled mods, validate the complete output, and load it on the
+  next editor launch. Scarab runs without a console window and remains a
+  separate, optional download. Scarab v1.7.4 or newer is required. Automatic
+  regeneration is still future work; generation is currently user-triggered.
+  (issue #18)
+- **Correct armor meanings and chassis maximums.** The loadout editor now shows
+  current armor, installed armor, and MDA chassis caps separately. The old
+  misleading max-armor action is now **Repair armor (= installed)**, and edited
+  current armor is validated against the installed allocation. Torso chassis
+  caps are identified as shared front-plus-rear limits. (PR #19, FiendishDrWu)
+- **Campaign date editing.** The campaign's current date can now be edited while
+  preserving the save's starting date and correctly updating elapsed campaign
+  days. (PR #20, FiendishDrWu)
 
 ## v1.16.1
 - **Catalog data refresh + two fixes (FiendishDrWu).** The mech, item, stock-template and

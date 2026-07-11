@@ -116,10 +116,12 @@ ignores anything from a DLC you don't own.
 **Does it support modded items, mechs, or traits?**
 Experimental support is being tested through
 [Scarab](https://github.com/FiendishDrWu/Scarab), FiendishDrWu's standalone
-catalog generator. The **Catalogs...** button can run Scarab v1.7.4 against your
-MW5 install and enabled mods, then load the generated `.json.gz` catalogs on the
-next launch. The normal built-in catalogs are still used unless you explicitly
-generate or choose a Scarab catalog folder.
+catalog generator. Download
+[Scarab v1.7.4 or newer](https://github.com/FiendishDrWu/Scarab/releases/latest),
+then use **Catalogs...** to run it against your MW5 install and enabled mods.
+The generated `.json.gz` catalogs load on the next editor launch. The normal
+built-in catalogs remain active unless you explicitly generate or choose a
+Scarab catalog folder.
 
 **What's the difference between an "exact" and "approximate" added mech?**
 If you already own a mech of that chassis, Add Mech makes a perfect duplicate.
@@ -215,6 +217,16 @@ better because of you:
 - Everyone on Nexus and GitHub who has filed reports and suggestions.
 
 ## Changelog
+
+**v1.17.0**
+- **Experimental mod catalogs through Scarab** - the new **Catalogs...** dialog
+  can quietly generate catalogs for enabled mods using Scarab v1.7.4 or newer.
+  Scarab remains a separate, optional download. (issue #18)
+- **Armor semantics fixed** - current, installed, and MDA chassis maximum armor
+  are now shown separately; repair and validation use the installed allocation.
+  (PR #19, FiendishDrWu)
+- **Campaign date editing** - edit the current campaign date directly while the
+  editor updates elapsed campaign days correctly. (PR #20, FiendishDrWu)
 
 **v1.16.1**
 - **Catalog refresh + fixes** (FiendishDrWu): Bullshark corrected from Berserker to 95t

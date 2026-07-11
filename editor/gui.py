@@ -153,7 +153,7 @@ def weapon_slot_location(slot_id: str) -> str:
     return part or "Other"
 
 
-APP_VERSION = "1.16.1"
+APP_VERSION = "1.17.0"
 
 # update check (GitHub is the source of truth; Nexus may lag a release behind)
 GITHUB_REPO = "jonayetjubaer-cmyk/JJs-MW5-Merc-Save-Editor"
@@ -376,7 +376,7 @@ class EditorApp(tk.Tk):
         ttk.Label(
             frm,
             text=("Scarab support is experimental. Use Scarab "
-                  f"{scarab_integration.SUPPORTED_SCARAB} to generate "
+                  f"{scarab_integration.MINIMUM_SCARAB} or newer to generate "
                   "item_catalog.json.gz, mech_catalog.json.gz, "
                   "trait_catalog.json.gz, and stock_templates.json.gz from "
                   "your MW5 install and enabled mods."),

@@ -8,11 +8,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import os
+import re
 import subprocess
 
 import catalog_source
 
-SUPPORTED_SCARAB = "v1.7.4"
+MINIMUM_SCARAB = "v1.7.4"
 DEFAULT_OUTPUT = "jj-catalog"
 _CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
@@ -41,6 +42,14 @@ def _clean_output_name(value: str) -> str:
 def output_dir_for(scarab_exe: str, output_name: str) -> str:
     exe_dir = os.path.dirname(os.path.abspath(scarab_exe))
     return os.path.abspath(os.path.join(exe_dir, _clean_output_name(output_name)))
+
+
+def _version_tuple(value: str) -> tuple[int, int, int] | None:
+    match = re.search(r"\d+(?:\.\d+){1,2}", value or "")
+    if not match:
+        return None
+    parts = [int(part) for part in match.group(0).split(".")]
+    return tuple((parts + [0, 0])[:3])
 
 
 def run_scarab(
@@ -77,13 +86,16 @@ def run_scarab(
         return ScarabResult(False, message=f"Could not verify the Scarab version: {exc}")
 
     version_text = (version_proc.stdout or version_proc.stderr or "").strip()
-    reported_version = version_text.split()[-1].lstrip("v") if version_text else "unknown"
-    required_version = SUPPORTED_SCARAB.lstrip("v")
-    if version_proc.returncode != 0 or reported_version != required_version:
+    reported_version = _version_tuple(version_text)
+    minimum_version = _version_tuple(MINIMUM_SCARAB)
+    assert minimum_version is not None
+    if (version_proc.returncode != 0 or reported_version is None
+            or reported_version < minimum_version):
+        reported_text = ".".join(str(part) for part in reported_version) if reported_version else "unknown"
         return ScarabResult(
             False,
-            message=(f"Scarab {SUPPORTED_SCARAB} is required; the selected executable "
-                     f"reports {reported_version}."),
+            message=(f"Scarab {MINIMUM_SCARAB} or newer is required; the selected "
+                     f"executable reports {reported_text}."),
         )
 
     try:
