@@ -153,7 +153,28 @@ def weapon_slot_location(slot_id: str) -> str:
     return part or "Other"
 
 
-APP_VERSION = "1.17.0"
+def _fit_combobox_dropdown(combo: ttk.Combobox, max_chars: int = 60):
+    """Widen a ttk combobox's popup so long asset names remain readable."""
+    try:
+        values = combo["values"]
+        width = min(max((len(str(v)) for v in values), default=0) + 2, max_chars)
+        width = max(width, int(combo.cget("width")))
+        popdown = combo.tk.call("ttk::combobox::PopdownWindow", str(combo))
+        combo.tk.call(f"{popdown}.f.l", "configure", "-width", width)
+    except (tk.TclError, TypeError, ValueError):
+        # Some non-Windows Tk themes use a different private popup layout.
+        # The wider visible field still improves those platforms.
+        pass
+
+
+def _readable_combobox(parent, *, width: int, **kwargs) -> ttk.Combobox:
+    """Combobox with a compact field and a popup sized for its longest value."""
+    combo = ttk.Combobox(parent, width=width, **kwargs)
+    combo.configure(postcommand=lambda c=combo: _fit_combobox_dropdown(c))
+    return combo
+
+
+APP_VERSION = "1.17.1"
 
 # update check (GitHub is the source of truth; Nexus may lag a release behind)
 GITHUB_REPO = "jonayetjubaer-cmyk/JJs-MW5-Merc-Save-Editor"
@@ -1842,15 +1863,19 @@ class LoadoutDialog(tk.Toplevel):
             row = ttk.Frame(parent)
             row.pack(fill="x", padx=3, pady=1)
             ttk.Label(row, text=HARDPOINT_LABEL.get(cls, cls), width=9, font=("", 8)).pack(side="left")
-            ttk.Combobox(row, textvariable=var, values=self._weapon_options(slot),
-                         width=15, state="readonly").pack(side="left")
+            _readable_combobox(
+                row, textvariable=var, values=self._weapon_options(slot),
+                width=24, state="readonly",
+            ).pack(side="left")
         for slot, var in ews:
             kind = "Jump Jet" if "JumpJet" in slot.slot_type else "Gear"
             row = ttk.Frame(parent)
             row.pack(fill="x", padx=3, pady=1)
             ttk.Label(row, text=kind, width=9, font=("", 8)).pack(side="left")
-            ttk.Combobox(row, textvariable=var, values=self._equip_names(slot),
-                         width=15, state="readonly").pack(side="left")
+            _readable_combobox(
+                row, textvariable=var, values=self._equip_names(slot),
+                width=24, state="readonly",
+            ).pack(side="left")
         if not sws and not ews:
             ttk.Label(parent, text="(none)", style="Muted.TLabel", font=("", 8)).pack(padx=3, pady=2)
 
@@ -1936,8 +1961,10 @@ class LoadoutDialog(tk.Toplevel):
                 cls = slot.hardpoint_class or "?"
                 ttk.Label(grid, text=f"    {HARDPOINT_LABEL.get(cls, cls)}", width=34).grid(
                     row=r, column=0, sticky="w", pady=1)
-                ttk.Combobox(grid, textvariable=var, values=self._weapon_options(slot),
-                             width=22, state="readonly").grid(row=r, column=1, sticky="w", padx=2)
+                _readable_combobox(
+                    grid, textvariable=var, values=self._weapon_options(slot),
+                    width=36, state="readonly",
+                ).grid(row=r, column=1, sticky="w", padx=2)
                 for gi, gv in enumerate(gvars, start=1):
                     ttk.Checkbutton(grid, variable=gv).grid(row=r, column=1 + gi)
                 r += 1
@@ -1945,9 +1972,10 @@ class LoadoutDialog(tk.Toplevel):
                 kind = "Jump Jet" if "JumpJet" in slot.slot_type else "Gear"
                 ttk.Label(grid, text=f"    [{kind}]", width=34).grid(
                     row=r, column=0, sticky="w", pady=1)
-                ttk.Combobox(grid, textvariable=var, values=self._equip_names(slot),
-                             width=22, state="readonly").grid(row=r, column=1, columnspan=6,
-                                                              sticky="w", padx=2)
+                _readable_combobox(
+                    grid, textvariable=var, values=self._equip_names(slot),
+                    width=36, state="readonly",
+                ).grid(row=r, column=1, columnspan=6, sticky="w", padx=2)
                 r += 1
         if self.slot_widgets:
             self._render_chain_fire_row(grid, r + 1, 1)   # group cols are 1+gi here

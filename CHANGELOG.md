@@ -1,5 +1,24 @@
 # Changelog
 
+## v1.17.1
+- **Empty inventories can now receive imports.** New `.mw5export` files carry one
+  validated weapon/equipment donor structure, allowing imports into saves whose
+  inventory arrays are completely empty. Older exports remain compatible and show
+  the existing workaround when no donor is available. Tested successfully in-game
+  by Volt-Ampere. (issue #21)
+- **Imported commanders no longer create duplicate protected pilots.** A commander
+  transferred from another save is now converted to a regular pilot while receiving
+  a fresh ID, so importing Mason cannot create additional `Player1` records that
+  cannot be assigned or removed. (issue #17)
+- **Loadout names stay readable.** Weapon and equipment fields are wider, and their
+  dropdowns expand to fit long stock or mod-added asset names while preserving the
+  compact body-location layout. (issue #22, Mad5555)
+- **Duncan Fisher's Warhammer display fix is permanent again.** Both
+  `WHM-DNC_MDA` and `WHM-DNC_PLAYABLE_MDA` resolve to Warhammer (70t, Heavy)
+  without exposing either campaign-only asset in Add Mech. The fallback now lives
+  in editor code so generated Scarab catalog refreshes cannot remove it.
+  (issue #24, Volt-Ampere and FiendishDrWu)
+
 ## v1.17.0
 - **Experimental mod catalog support through Scarab.** The new **Catalogs...**
   dialog can run FiendishDrWu's standalone catalog generator against the user's

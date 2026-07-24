@@ -218,6 +218,16 @@ better because of you:
 
 ## Changelog
 
+**v1.17.1**
+- **Empty inventory import** - new exports include safe weapon/equipment donor
+  structures, so they can be imported into saves with no inventory entries. (issue #21)
+- **Pilot transfer fix** - imported commanders become regular pilots instead of
+  creating duplicate protected `Player1` records. (issue #17)
+- **Readable loadout dropdowns** - longer stock and mod-added item names now fit in
+  expanded loadout pickers. (issue #22)
+- **Duncan's Warhammer display fix restored** - both campaign asset names resolve to
+  Warhammer, 70t, Heavy without appearing in Add Mech. (issue #24)
+
 **v1.17.0**
 - **Experimental mod catalogs through Scarab** - the new **Catalogs...** dialog
   can quietly generate catalogs for enabled mods using Scarab v1.7.4 or newer.

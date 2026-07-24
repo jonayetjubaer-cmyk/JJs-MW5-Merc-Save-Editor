@@ -985,6 +985,12 @@ class Pilot:
             return False
         return slot.raw_payload.find(b"::None") == -1
 
+    def make_regular(self):
+        """Clear any protected player slot carried by an imported pilot."""
+        slot = self.element.get("LockedPlayerSlot")
+        if slot is not None:
+            _set_leaf(slot, write_fstring_payload("EMechWarriorPlayerSlot::None"))
+
     @property
     def callsign(self) -> str:
         p = _path(self.persona.decoded, "Callsign")
@@ -1177,6 +1183,28 @@ class InventoryItem:
         p = _path(self.element, "ItemId", "Value")
         if p is not None:
             p.raw_payload = value
+
+
+def _encode_inventory_template(element: PropertyList) -> str:
+    """Serialize one inventory element for use as a portable donor."""
+    w = Writer()
+    write_property_list(w, element)
+    return base64.b64encode(w.bytes()).decode("ascii")
+
+
+def _decode_inventory_template(blob: str, inventory: str) -> PropertyList:
+    """Decode and minimally validate an inventory donor from an export file."""
+    raw = base64.b64decode(blob, validate=True)
+    r = Reader(raw)
+    element = read_property_list(r)
+    if r.remaining():
+        raise ValueError("Inventory template has trailing data.")
+    item = InventoryItem(element)
+    expected_idfield = "WeaponId" if inventory == "weapon" else "EquipmentId"
+    if (item._idfield != expected_idfield or element.get("Count") is None
+            or len(item.guid) != 16):
+        raise ValueError("Inventory template is missing required fields.")
+    return element
 
 
 # ---------------------------------------------------------------------------
@@ -1869,7 +1897,7 @@ class SaveFile:
         return [InventoryItem(el) for el in self._inventory_array("equipment").elements]
 
     def add_item(self, inventory: str, asset_type: str, asset_name: str,
-                 count: int = 1) -> bytes:
+                 count: int = 1, template: PropertyList | None = None) -> bytes:
         """Add (or top-up) an item in WeaponInventory or EquipmentInventory.
 
         inventory = 'weapon' | 'equipment'. If an item with the same asset
@@ -1882,9 +1910,12 @@ class SaveFile:
             if it.asset_name == asset_name and it.asset_type == asset_type:
                 it.count = it.count + count
                 return it.guid
-        if not arr.elements:
-            raise RuntimeError(f"{inventory} inventory is empty; no template to clone")
-        clone = copy.deepcopy(arr.elements[0])
+        if not arr.elements and template is None:
+            raise RuntimeError(
+                f"{inventory} inventory is empty and the export has no donor template; "
+                "add one item in-game first or create a new export with this editor version"
+            )
+        clone = copy.deepcopy(arr.elements[0] if arr.elements else template)
         item = InventoryItem(clone)
         new_guid = uuid.uuid4().bytes
         item.guid = new_guid
@@ -1947,7 +1978,7 @@ class SaveFile:
                   cbills=True, factions=True) -> dict:
         """Write selected content to a portable .mw5export file (JSON + base64
         element blobs) that import_from() can add into another save."""
-        data = {"format": "mw5export", "version": 1}
+        data = {"format": "mw5export", "version": 2}
         if mechs:
             out = []
             for m in self.mechs():
@@ -1976,6 +2007,13 @@ class SaveFile:
         if inventory:
             data["weapons"] = [[i.asset_name, i.asset_type, i.count] for i in self.weapon_inventory()]
             data["equipment"] = [[i.asset_name, i.asset_type, i.count] for i in self.equipment_inventory()]
+            templates = {}
+            for kind in ("weapon", "equipment"):
+                elements = self._inventory_array(kind).elements
+                if elements:
+                    templates[kind] = _encode_inventory_template(elements[0])
+            if templates:
+                data["inventory_templates"] = templates
         if cbills:
             data["cbills"] = self.cbills
         if factions:
@@ -2027,17 +2065,29 @@ class SaveFile:
             roster = self.model("RosterModel").plist.get("PilotRoster").decoded
             for entry in data["pilots"]:
                 el = read_property_list(Reader(base64.b64decode(entry["blob"])))
-                Pilot(el).persona_id = uuid.uuid4().bytes
+                pilot = Pilot(el)
+                pilot.persona_id = uuid.uuid4().bytes
+                # A transferred commander must become a regular pilot. Keeping
+                # Player1 would create another protected commander in the target
+                # save, leaving duplicate Masons that cannot be assigned/removed.
+                pilot.make_regular()
                 roster.elements.append(el)
                 roster.count += 1
                 summary["pilots"] += 1
 
         if inventory:
+            template_blobs = data.get("inventory_templates", {})
+            templates = {}
+            for kind in ("weapon", "equipment"):
+                entries_key = "weapons" if kind == "weapon" else "equipment"
+                if (data.get(entries_key) and not self._inventory_array(kind).elements
+                        and template_blobs.get(kind)):
+                    templates[kind] = _decode_inventory_template(template_blobs[kind], kind)
             for name, atype, count in data.get("weapons", []):
-                self.add_item("weapon", atype, name, count)
+                self.add_item("weapon", atype, name, count, templates.get("weapon"))
                 summary["items"] += 1
             for name, atype, count in data.get("equipment", []):
-                self.add_item("equipment", atype, name, count)
+                self.add_item("equipment", atype, name, count, templates.get("equipment"))
                 summary["items"] += 1
 
         if cbills and "cbills" in data:
