@@ -48,19 +48,53 @@ from item_catalog import CATALOG, CATEGORY_INVENTORY, WEAPONS, EQUIPMENT, AMMO
 from trait_catalog import (PILOT_TRAITS, MECH_TRAITS,
                            dropdown_values as trait_dropdown_values,
                            resolve as resolve_trait)
-from savefile import weapon_class, ARMOR_PARTS, REAR_PARTS
+from savefile import weapon_class, hardpoint_class, ARMOR_PARTS, REAR_PARTS
 from stock_templates import max_armor_caps, stock_types
 
 HARDPOINT_LABEL = {"EH": "Energy", "BH": "Ballistic", "MH": "Missile",
                    "AH": "Anti-Missile", "Melee": "Melee"}
+BODY_LOADOUT_COMBO_WIDTH = 16
+FIRE_GROUP_LABEL_WIDTH = 40
 
 # Body locations in canonical Mech-Lab order, for grouping the loadout editor.
 LOCATION_ORDER = ["Head", "CenterTorso", "LeftTorso", "RightTorso",
-                  "LeftArm", "RightArm", "LeftLeg", "RightLeg"]
+                  "LeftArm", "RightArm", "LeftHand", "RightHand",
+                  "LeftLeg", "RightLeg"]
 LOCATION_LABEL = {"Head": "Head", "CenterTorso": "Center Torso",
                   "LeftTorso": "Left Torso", "RightTorso": "Right Torso",
                   "LeftArm": "Left Arm", "RightArm": "Right Arm",
+                  "LeftHand": "Left Hand / Melee",
+                  "RightHand": "Right Hand / Melee",
                   "LeftLeg": "Left Leg", "RightLeg": "Right Leg"}
+
+# Detailed weapon-mount names shown as conditional sections inside each
+# composite arm panel.  Equipment is only serialized at the broad LeftArm /
+# RightArm level, so it gets an honest generic section rather than an invented
+# upper-arm / forearm assignment.
+ARM_PREFIX_SECTION = {
+    "Clavicle": "Clavicle",
+    "Shoulder": "Shoulder",
+    "Upperarm": "Upper Arm",
+    "Forearm": "Forearm",
+    "Lowerarm": "Lower Arm",
+    "Arm": "Arm",
+    "Hand": "Hand",
+}
+ARM_SECTION_ORDER = ("Clavicle", "Shoulder", "Upper Arm", "Forearm",
+                     "Lower Arm", "Arm", "Hand")
+ARM_PANEL_LOCATIONS = ("LeftArm", "RightArm")
+ARM_EQUIPMENT_SECTION = "Equipment"
+
+# Paper-doll positions.  Composite arm panels flank the torso; the compact
+# hand / melee panels sit directly below them, alongside the legs.
+BODY_LOCATION_POS = {
+    "Head": (0, 2),
+    "LeftArm": (1, 0), "LeftTorso": (1, 1),
+    "CenterTorso": (1, 2), "RightTorso": (1, 3),
+    "RightArm": (1, 4),
+    "LeftHand": (2, 0), "LeftLeg": (2, 1),
+    "RightLeg": (2, 3), "RightHand": (2, 4),
+}
 
 # weight-class colours for the mech-bay card icons (mid-tone; read on either theme)
 CLASS_ICON = {"Light": "#2f7fd0", "Medium": "#22b083",
@@ -138,19 +172,55 @@ def save_pref(name, value):
         pass
 
 
-def weapon_slot_location(slot_id: str) -> str:
-    """Map a weapon hardpoint slot id (e.g. 'Torso_Left_EH1_...', 'Head_MH1_...',
-    'Arm_Right_...') to a canonical body location matching the equipment
-    part labels (LeftTorso, Head, RightArm, ...)."""
+def weapon_slot_placement(slot_id: str) -> tuple[str, str | None]:
+    """Map one raw weapon hardpoint id to (paper-doll panel, detail section).
+
+    Weapon ids use fine-grained mount names (Forearm, Upperarm, Shoulder,
+    Clavicle, etc.), while equipment uses broad LeftArm / RightArm parts.  The
+    panel key keeps the paper-doll compact; the section preserves the weapon's
+    more precise source location for Body, List and fire-group labels.
+    """
     t = slot_id.split("_")
     part = t[0] if t else ""
     side = t[1] if len(t) > 1 else ""
     if part == "Head":
-        return "Head"
-    if part in ("Torso", "Arm", "Leg"):
-        base = "Torso" if part == "Torso" else part
-        return {"Left": "Left", "Right": "Right", "Center": "Center"}.get(side, side) + base
-    return part or "Other"
+        return "Head", None
+    if part == "Torso":
+        prefix = {"Left": "Left", "Right": "Right", "Center": "Center"}.get(
+            side, side)
+        return prefix + "Torso", None
+    if part == "Leg":
+        prefix = {"Left": "Left", "Right": "Right", "Center": "Center"}.get(
+            side, side)
+        return prefix + "Leg", None
+    if part in ARM_PREFIX_SECTION and side in ("Left", "Right"):
+        if hardpoint_class(slot_id) == "Melee":
+            return side + "Hand", "Melee / Actuator"
+        return side + "Arm", ARM_PREFIX_SECTION[part]
+    if part == "Arm":
+        prefix = {"Left": "Left", "Right": "Right", "Center": "Center"}.get(
+            side, side)
+        return prefix + "Arm", None
+    return part or "Other", None
+
+
+def weapon_slot_location(slot_id: str) -> str:
+    """Paper-doll panel key for a raw weapon hardpoint id."""
+    return weapon_slot_placement(slot_id)[0]
+
+
+def weapon_slot_region(slot_id: str) -> str | None:
+    """Detailed source region retained within a composite arm panel."""
+    return weapon_slot_placement(slot_id)[1]
+
+
+def weapon_slot_location_label(slot_id: str) -> str:
+    """Readable side + detailed region label for list/fire-group displays."""
+    location, region = weapon_slot_placement(slot_id)
+    label = LOCATION_LABEL.get(location, location)
+    if region and location in ARM_PANEL_LOCATIONS:
+        return f"{label} · {region}"
+    return label
 
 
 def _fit_combobox_dropdown(combo: ttk.Combobox, max_chars: int = 60):
@@ -1857,7 +1927,16 @@ class LoadoutDialog(tk.Toplevel):
             eloc.setdefault(ew[0].part_label, []).append(ew)
         return wloc, eloc
 
-    def _fill_panel(self, parent, sws, ews):
+    def _weapon_sections(self, sws):
+        grouped = {}
+        for sw in sws:
+            section = weapon_slot_region(sw[0].slot_id) or "Weapons"
+            grouped.setdefault(section, []).append(sw)
+        order = [section for section in ARM_SECTION_ORDER if section in grouped]
+        order += [section for section in grouped if section not in order]
+        return [(section, grouped[section]) for section in order]
+
+    def _fill_weapon_rows(self, parent, sws):
         for slot, var, _gvars in sws:
             cls = slot.hardpoint_class or "?"
             row = ttk.Frame(parent)
@@ -1865,8 +1944,10 @@ class LoadoutDialog(tk.Toplevel):
             ttk.Label(row, text=HARDPOINT_LABEL.get(cls, cls), width=9, font=("", 8)).pack(side="left")
             _readable_combobox(
                 row, textvariable=var, values=self._weapon_options(slot),
-                width=24, state="readonly",
+                width=BODY_LOADOUT_COMBO_WIDTH, state="readonly",
             ).pack(side="left")
+
+    def _fill_equipment_rows(self, parent, ews):
         for slot, var in ews:
             kind = "Jump Jet" if "JumpJet" in slot.slot_type else "Gear"
             row = ttk.Frame(parent)
@@ -1874,8 +1955,24 @@ class LoadoutDialog(tk.Toplevel):
             ttk.Label(row, text=kind, width=9, font=("", 8)).pack(side="left")
             _readable_combobox(
                 row, textvariable=var, values=self._equip_names(slot),
-                width=24, state="readonly",
+                width=BODY_LOADOUT_COMBO_WIDTH, state="readonly",
             ).pack(side="left")
+
+    def _fill_panel(self, parent, sws, ews, *, sectioned=False):
+        if sectioned:
+            for section, section_sws in self._weapon_sections(sws):
+                ttk.Label(parent, text=section, style="Muted.TLabel",
+                          font=("", 8, "bold")).pack(
+                              anchor="w", padx=3, pady=(3, 0))
+                self._fill_weapon_rows(parent, section_sws)
+            if ews:
+                ttk.Label(parent, text=ARM_EQUIPMENT_SECTION,
+                          style="Muted.TLabel", font=("", 8, "bold")).pack(
+                              anchor="w", padx=3, pady=(3, 0))
+                self._fill_equipment_rows(parent, ews)
+        else:
+            self._fill_weapon_rows(parent, sws)
+            self._fill_equipment_rows(parent, ews)
         if not sws and not ews:
             ttk.Label(parent, text="(none)", style="Muted.TLabel", font=("", 8)).pack(padx=3, pady=2)
 
@@ -1886,15 +1983,15 @@ class LoadoutDialog(tk.Toplevel):
         wloc, eloc = self._group_by_location()
         pd = ttk.Frame(f)
         pd.pack(padx=10, pady=2)
-        POS = {"Head": (0, 2), "LeftArm": (1, 0), "LeftTorso": (1, 1),
-               "CenterTorso": (1, 2), "RightTorso": (1, 3), "RightArm": (1, 4),
-               "LeftLeg": (2, 1), "RightLeg": (2, 3)}
-        for loc, (rr, cc) in POS.items():
+        for loc, (rr, cc) in BODY_LOCATION_POS.items():
             panel = ttk.LabelFrame(pd, text=LOCATION_LABEL.get(loc, loc))
             panel.grid(row=rr, column=cc, padx=3, pady=3, sticky="nsew")
-            self._fill_panel(panel, wloc.get(loc, []), eloc.get(loc, []))
-        # any hardpoints/equipment outside the standard 8 locations (modded mechs)
-        others = [l for l in (list(wloc) + list(eloc)) if l not in POS]
+            self._fill_panel(
+                panel, wloc.get(loc, []), eloc.get(loc, []),
+                sectioned=loc in ARM_PANEL_LOCATIONS,
+            )
+        # any hardpoints/equipment outside the paper-doll locations (modded mechs)
+        others = [l for l in (list(wloc) + list(eloc)) if l not in BODY_LOCATION_POS]
         others = list(dict.fromkeys(others))
         if others:
             op = ttk.LabelFrame(f, text="Other hardpoints")
@@ -1912,14 +2009,15 @@ class LoadoutDialog(tk.Toplevel):
         ttk.Label(parent, text="Fire groups", font=("", 10, "bold")).pack(anchor="w", padx=10)
         fgf = ttk.Frame(parent)
         fgf.pack(fill="x", padx=10, pady=2)
-        ttk.Label(fgf, text="Weapon hardpoint", width=34).grid(row=0, column=0, sticky="w")
+        ttk.Label(fgf, text="Weapon hardpoint", width=FIRE_GROUP_LABEL_WIDTH).grid(
+            row=0, column=0, sticky="w")
         for g in range(1, 7):
             ttk.Label(fgf, text=str(g), width=3).grid(row=0, column=g)
         for i, (slot, _var, gvars) in enumerate(self.slot_widgets, start=1):
-            loc = weapon_slot_location(slot.slot_id)
             cls = slot.hardpoint_class or "?"
-            ttk.Label(fgf, width=34, anchor="w",
-                      text=f"{LOCATION_LABEL.get(loc, loc)} · {HARDPOINT_LABEL.get(cls, cls)}"
+            ttk.Label(fgf, width=FIRE_GROUP_LABEL_WIDTH, anchor="w",
+                      text=f"{weapon_slot_location_label(slot.slot_id)} · "
+                           f"{HARDPOINT_LABEL.get(cls, cls)}"
                       ).grid(row=i, column=0, sticky="w", pady=1)
             for gi, gv in enumerate(gvars, start=1):
                 ttk.Checkbutton(fgf, variable=gv).grid(row=i, column=gi)
@@ -1929,7 +2027,8 @@ class LoadoutDialog(tk.Toplevel):
         """A 'chain fire' toggle per group (1-6): on = weapons in that group fire
         one after another; off = salvo (all at once). group_col0 is the grid
         column just before group 1's column."""
-        ttk.Label(grid, text="Chain fire (off = salvo)", width=34, anchor="w",
+        ttk.Label(grid, text="Chain fire (off = salvo)",
+                  width=FIRE_GROUP_LABEL_WIDTH, anchor="w",
                   style="Muted.TLabel").grid(row=row, column=0, sticky="w", pady=(6, 1))
         for gi in range(1, 7):
             ttk.Checkbutton(grid, variable=self._chain_vars[gi - 1]).grid(
@@ -1957,20 +2056,39 @@ class LoadoutDialog(tk.Toplevel):
             ttk.Label(grid, text=LOCATION_LABEL.get(loc, loc), font=("", 9, "bold")).grid(
                 row=r, column=0, columnspan=8, sticky="w", pady=(8, 1))
             r += 1
-            for slot, var, gvars in wloc.get(loc, []):
-                cls = slot.hardpoint_class or "?"
-                ttk.Label(grid, text=f"    {HARDPOINT_LABEL.get(cls, cls)}", width=34).grid(
-                    row=r, column=0, sticky="w", pady=1)
-                _readable_combobox(
-                    grid, textvariable=var, values=self._weapon_options(slot),
-                    width=36, state="readonly",
-                ).grid(row=r, column=1, sticky="w", padx=2)
-                for gi, gv in enumerate(gvars, start=1):
-                    ttk.Checkbutton(grid, variable=gv).grid(row=r, column=1 + gi)
+            sectioned = loc in ARM_PANEL_LOCATIONS
+            sws = wloc.get(loc, [])
+            weapon_sections = self._weapon_sections(sws) if sectioned else [(None, sws)]
+            for section, section_sws in weapon_sections:
+                if section is not None:
+                    ttk.Label(grid, text=f"    {section}", width=34,
+                              style="Muted.TLabel", font=("", 8, "bold")).grid(
+                                  row=r, column=0, sticky="w", pady=(3, 1))
+                    r += 1
+                indent = "        " if sectioned else "    "
+                for slot, var, gvars in section_sws:
+                    cls = slot.hardpoint_class or "?"
+                    ttk.Label(
+                        grid, text=f"{indent}{HARDPOINT_LABEL.get(cls, cls)}",
+                        width=34,
+                    ).grid(row=r, column=0, sticky="w", pady=1)
+                    _readable_combobox(
+                        grid, textvariable=var, values=self._weapon_options(slot),
+                        width=36, state="readonly",
+                    ).grid(row=r, column=1, sticky="w", padx=2)
+                    for gi, gv in enumerate(gvars, start=1):
+                        ttk.Checkbutton(grid, variable=gv).grid(row=r, column=1 + gi)
+                    r += 1
+            ews = eloc.get(loc, [])
+            if sectioned and ews:
+                ttk.Label(grid, text=f"    {ARM_EQUIPMENT_SECTION}", width=34,
+                          style="Muted.TLabel", font=("", 8, "bold")).grid(
+                              row=r, column=0, sticky="w", pady=(3, 1))
                 r += 1
             for slot, var in eloc.get(loc, []):
                 kind = "Jump Jet" if "JumpJet" in slot.slot_type else "Gear"
-                ttk.Label(grid, text=f"    [{kind}]", width=34).grid(
+                indent = "        " if sectioned else "    "
+                ttk.Label(grid, text=f"{indent}[{kind}]", width=34).grid(
                     row=r, column=0, sticky="w", pady=1)
                 _readable_combobox(
                     grid, textvariable=var, values=self._equip_names(slot),
