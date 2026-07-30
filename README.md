@@ -218,6 +218,17 @@ better because of you:
 
 ## Changelog
 
+**v1.17.2**
+- **Friendlier trait dropdowns** - pilot and mech trait pickers now show friendly
+  names first, expand for long stock or mod-added entries, and place unlabeled
+  assets at the bottom in alphabetical order. (issue #27)
+- **Correct left/right arm grouping** - arm hardpoints are separated by side and
+  keep their detailed mount regions; melee and actuator mounts have dedicated
+  hand panels. (issue #29, PR #30, FiendishDrWu)
+- **Scarab catalog refresh** - adds the missing Clan Endo Steel and Ferro-Fibrous
+  Armor entries and corrects several Clan chassis and hero-name records.
+  (issue #26, PR #28, FiendishDrWu)
+
 **v1.17.1**
 - **Empty inventory import** - new exports include safe weapon/equipment donor
   structures, so they can be imported into saves with no inventory entries. (issue #21)

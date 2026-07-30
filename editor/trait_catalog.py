@@ -21,18 +21,30 @@ _SEP = " -- "
 
 
 def display(asset: str, label: str | None = None) -> str:
-    """Dropdown display string for a trait: 'Asset -- Friendly Label'."""
-    return f"{asset}{_SEP}{label}" if label else asset
+    """Dropdown display string: 'Friendly Label -- Asset' when known."""
+    return f"{label}{_SEP}{asset}" if label else asset
 
 
 def dropdown_values(save_names, catalog) -> list[str]:
-    """Merge save-harvested asset names with the catalog into sorted display
-    strings (catalog entries get their friendly label)."""
+    """Merge save and catalog traits into a friendly-first dropdown.
+
+    Cataloged traits sort by their friendly labels. Unknown save-harvested
+    assets remain selectable and sort alphabetically after labeled traits.
+    """
     labels = dict(catalog)
     names = set(save_names) | set(labels)
-    return sorted((display(n, labels.get(n)) for n in names), key=str.lower)
+    labeled = sorted(
+        ((labels[n].casefold(), n.casefold(), display(n, labels[n]))
+         for n in names if labels.get(n)),
+    )
+    unlabeled = sorted(
+        ((n.casefold(), n) for n in names if not labels.get(n)),
+    )
+    return [value for _label, _asset, value in labeled] + [
+        value for _asset, value in unlabeled
+    ]
 
 
 def resolve(text: str) -> str:
     """A dropdown display string (or raw typed name) -> bare asset name."""
-    return text.split(_SEP, 1)[0].strip()
+    return text.rsplit(_SEP, 1)[-1].strip()

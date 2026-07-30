@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.17.2
+- **Trait pickers are easier to read and browse.** Pilot and mech trait dropdowns
+  now show the friendly name first, expand for long stock or mod-added entries,
+  and sort labeled traits by their friendly names. Traits without a friendly
+  label remain selectable at the bottom in alphabetical order. The save still
+  receives the exact engine asset name. (issue #27, TimeDiver0)
+- **Left and right arm hardpoints are separated correctly.** The body loadout
+  view now groups ranged arm mounts by side while retaining their detailed
+  clavicle, shoulder, upper-arm, forearm, and lower-arm regions. Melee and
+  actuator mounts appear in dedicated hand panels, and the same detail is
+  preserved in the list view and fire-group labels. (issue #29, PR #30,
+  FiendishDrWu)
+- **Built-in Scarab catalogs refreshed.** Adds `ClanEndoSteelStructure` and
+  `ClanFerroFibrousArmor`, corrects spacing for Ebon Jaguar, Mad Dog, and Night
+  Gyr chassis names, and removes placeholder hero-name mappings. (issue #26,
+  PR #28, FiendishDrWu)
+
 ## v1.17.1
 - **Empty inventories can now receive imports.** New `.mw5export` files carry one
   validated weapon/equipment donor structure, allowing imports into saves whose

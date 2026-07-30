@@ -244,7 +244,7 @@ def _readable_combobox(parent, *, width: int, **kwargs) -> ttk.Combobox:
     return combo
 
 
-APP_VERSION = "1.17.1"
+APP_VERSION = "1.17.2"
 
 # update check (GitHub is the source of truth; Nexus may lag a release behind)
 GITHUB_REPO = "jonayetjubaer-cmyk/JJs-MW5-Merc-Save-Editor"
@@ -839,7 +839,9 @@ class EditorApp(tk.Tk):
         taf = ttk.Frame(form)
         taf.grid(row=tr + 3, column=0, columnspan=3, sticky="w", pady=4)
         self.pilot_trait_var = tk.StringVar()
-        self.pilot_trait_cb = ttk.Combobox(taf, textvariable=self.pilot_trait_var, width=32)
+        self.pilot_trait_cb = _readable_combobox(
+            taf, textvariable=self.pilot_trait_var, width=44,
+        )
         self.pilot_trait_cb.pack(side="left")
         ttk.Button(taf, text="Add", command=self.on_add_pilot_trait).pack(side="left", padx=4)
         ttk.Button(taf, text="Remove", command=self.on_remove_pilot_trait).pack(side="left")
@@ -1891,8 +1893,10 @@ class LoadoutDialog(tk.Toplevel):
             actf = ttk.Frame(tfrm)
             actf.pack(side="left", fill="x", padx=8)
             self.mtrait_var = tk.StringVar()
-            ttk.Combobox(actf, textvariable=self.mtrait_var, values=self.trait_names,
-                         width=34).pack(anchor="w")
+            _readable_combobox(
+                actf, textvariable=self.mtrait_var, values=self.trait_names,
+                width=44,
+            ).pack(anchor="w")
             bf = ttk.Frame(actf)
             bf.pack(anchor="w", pady=4)
             ttk.Button(bf, text="Add", command=self._add_trait).pack(side="left")
