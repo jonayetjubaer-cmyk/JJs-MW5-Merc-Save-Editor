@@ -48,13 +48,14 @@ jobs:
           $tag = "${{ github.ref_name }}"
           $ver = $tag -replace '^v', ''
           if (-not $tag.StartsWith('v')) { $ver = '0.0.0-dev' }
+          $safeTag = $tag -replace '[^A-Za-z0-9._-]', '-'
           # Numeric-only form for the Windows VERSIONINFO resource: Nuitka's
           # --file-version wants digits/dots, so strip any suffix like -dev.
           $filever = ($ver -replace '[^0-9.]', '').Trim('.')
           if (-not $filever) { $filever = '0.0.0' }
           "version=$ver"                                   >> $env:GITHUB_OUTPUT
           "filever=$filever"                               >> $env:GITHUB_OUTPUT
-          "zip=JJs-MW5-Merc-Save-Editor-$tag.zip"          >> $env:GITHUB_OUTPUT
+          "zip=JJs-MW5-Merc-Save-Editor-$safeTag.zip"      >> $env:GITHUB_OUTPUT
 
       - name: Build with Nuitka (native binary)
         shell: pwsh
