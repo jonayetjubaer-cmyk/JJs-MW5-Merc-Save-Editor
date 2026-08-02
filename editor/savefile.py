@@ -132,6 +132,14 @@ def _int_property(name: str, value: int) -> Property:
     return Property(name, "IntProperty", w.bytes(), write_int(value), None)
 
 
+def _str_property(name: str, value: str) -> Property:
+    payload = write_fstring_payload(value)
+    w = Writer()
+    w.i64(len(payload))
+    w.write(b"\x00")
+    return Property(name, "StrProperty", w.bytes(), payload, None)
+
+
 def _path(plist: PropertyList, *names):
     """Walk nested StructProperty decoded lists by name; return final Property."""
     cur = plist
@@ -463,6 +471,33 @@ class Mech:
                   "MechDataAssetId", "ID", "PrimaryAssetName")
         if p is not None:
             _set_leaf(p, write_fstring_payload(name))
+
+    @property
+    def custom_name(self) -> str:
+        p = _path(self.market_item.decoded, "Item", "ItemData", "CustomName")
+        return read_fstring_payload(p.raw_payload) if p else ""
+
+    @custom_name.setter
+    def custom_name(self, name: str):
+        item_data = _path(self.market_item.decoded, "Item", "ItemData")
+        if item_data is None or item_data.decoded is None:
+            return
+        p = item_data.decoded.get("CustomName")
+        if p is not None:
+            _set_leaf(p, write_fstring_payload(name))
+            return
+
+        # Stock mechs may omit CustomName entirely. When adding one, graft the
+        # normal StrProperty immediately after MechDataAssetId, matching records
+        # where the game has serialized an explicit name.
+        new_prop = _str_property("CustomName", name)
+        props = item_data.decoded.properties
+        for i, prop in enumerate(props):
+            if prop.name == "MechDataAssetId":
+                props.insert(i + 1, new_prop)
+                break
+        else:
+            props.append(new_prop)
 
     def repair(self):
         """Set CurrentStructure/CurrentArmor (and rear) to the Installed values
@@ -1614,6 +1649,7 @@ class SaveFile:
                 break
 
         want = (chassis if chassis.endswith("_MDA") else chassis + "_MDA") if chassis else None
+        tpl = stock_template(chassis) if chassis else None
 
         # Tier 1: an owned mech of the exact chassis with a non-empty loadout is
         # a perfect template -- duplicate it verbatim.
@@ -1635,7 +1671,6 @@ class SaveFile:
         else:
             if chassis:
                 mech.chassis = chassis
-            tpl = stock_template(chassis) if chassis else None
             if tpl is not None:
                 # Best: populate the chassis's REAL stock loadout (correct armor,
                 # structure, weapons, weapon groups and equipment) from the
@@ -1661,6 +1696,13 @@ class SaveFile:
                 # The donor's equipment belongs to the donor chassis; carrying it
                 # over produces phantom gear (tonnage-eating jump jets, etc.).
                 mech.strip_equipment()
+
+        # A cloned donor can carry its own explicit CustomName. New mechs should
+        # start with the target template's stock variant code, regardless of
+        # whether their loadout came from an exact clone or was rebuilt.
+        stock_variant = tpl.get("variant") if tpl is not None else None
+        if isinstance(stock_variant, str) and stock_variant:
+            mech.custom_name = stock_variant
 
         # Normalise the wrapper to the requested location.
         if cold:
