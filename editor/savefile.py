@@ -180,14 +180,20 @@ REAR_PARTS = ["CenterTorsoRear", "LeftTorsoRear", "RightTorsoRear"]
 NONE_ASSET = "None"
 
 # A MechLoadoutWrapper's MechLoadoutType (EnumProperty) tells active-bay mechs
-# apart from market listings and cold storage -- ALL three live in the same
-# SaveStateModel.MechLoadoutWrappers array and all carry a MarketItemMech, so a
-# wrapper must NOT be treated as an owned/active mech just because it has one.
-# Active-bay mechs have no MechLoadoutType (or an active value); these two are
-# the ones to exclude from the owned list. (Format facts from FiendishDrWu, issue #2.)
+# apart from market listings, buyback listings and cold storage -- all four live
+# in the same SaveStateModel.MechLoadoutWrappers array and carry a MarketItemMech,
+# so a wrapper must NOT be treated as owned/active just because it has one.
+# Active-bay mechs have no MechLoadoutType (or an active value); the known
+# non-active values are excluded below. (Format facts from FiendishDrWu, issue #2.)
 MARKET_LOADOUT_TYPE = "EMechLoadoutType::MarketLoadout"
+BUYBACK_MARKET_LOADOUT_TYPE = "EMechLoadoutType::BuybackMarketLoadout"
 COLD_STORAGE_LOADOUT_TYPE = "EMechLoadoutType::ColdStorageLoadout"
-NON_OWNED_LOADOUT_TYPES = (MARKET_LOADOUT_TYPE, COLD_STORAGE_LOADOUT_TYPE)
+NON_OWNED_LOADOUT_TYPES = (
+    MARKET_LOADOUT_TYPE,
+    BUYBACK_MARKET_LOADOUT_TYPE,
+    COLD_STORAGE_LOADOUT_TYPE,
+)
+ZERO_GUID = bytes(16)
 import re as _re
 
 
@@ -419,7 +425,7 @@ class Mech:
     @property
     def is_owned(self) -> bool:
         """True for an active-bay owned mech (excludes market listings and
-        cold-storage records)."""
+        buyback/cold-storage records)."""
         return self.loadout_type not in NON_OWNED_LOADOUT_TYPES
 
     def set_cold_storage(self, marker_template=None):
@@ -1280,6 +1286,38 @@ class SaveFile:
     def _storage_array(self) -> ArrayValue:
         return self.model("MechStorageModel").plist.get("MechStorageList").decoded
 
+    def _claim_storage_slot(self, guid: bytes):
+        """Put ``guid`` in the first empty, preallocated active-bay slot.
+
+        MW5 represents a vacant position as a zero GUID. Older saves can have a
+        shorter array with no vacancy, so retain the existing append fallback in
+        that case while preferring the game's normal in-place slot reuse.
+        """
+        storage = self._storage_array()
+        for slot in storage.elements:
+            value = slot.get("Value")
+            if value is not None and value.raw_payload == ZERO_GUID:
+                value.raw_payload = guid
+                return
+
+        template = next(
+            (slot for slot in storage.elements if slot.get("Value") is not None),
+            None,
+        )
+        if template is None:
+            raise RuntimeError("MechStorageList has no slot template to clone.")
+        slot = copy.deepcopy(template)
+        slot.get("Value").raw_payload = guid
+        storage.elements.append(slot)
+        storage.count += 1
+
+    def _release_storage_slot(self, guid: bytes):
+        """Vacate every active-bay slot that references ``guid`` in place."""
+        for slot in self._storage_array().elements:
+            value = slot.get("Value")
+            if value is not None and value.raw_payload == guid:
+                value.raw_payload = ZERO_GUID
+
     # -- campaign date ----------------------------------------------------
     @property
     def starting_datetime(self) -> datetime.datetime:
@@ -1560,15 +1598,15 @@ class SaveFile:
           loadout so it carries no stale weapon groups            -> status "approx".
         `chassis` is the MechDataAsset PrimaryAssetName, e.g. "AS7-D_MDA"."""
         wrappers = self._wrappers_array()
-        storage = self._storage_array()
         new_guid = uuid.uuid4().bytes
         status = "approx"
         cold = (location == "cold")
 
-        # Always clone an ACTIVE-bay donor: only active mechs carry the full
-        # ItemData (InstalledWeapons, Equipment) we populate from. Cold-storage
-        # records can omit those arrays, so they're useless as donors. For a cold
-        # add we add the ColdStorageLoadout marker afterward (set_cold_storage).
+        # Prefer an ACTIVE-bay donor: active mechs reliably carry the full ItemData
+        # (InstalledWeapons, Equipment) we populate from. If a save has no active
+        # mech, retain the caller's donor_index fallback so an empty bay can still
+        # be repopulated. For a cold add we add the ColdStorageLoadout marker
+        # afterward (set_cold_storage).
         src_index = donor_index
         for i, el in enumerate(wrappers.elements):
             if self._mech_from_element(el).is_owned:
@@ -1581,8 +1619,9 @@ class SaveFile:
         # a perfect template -- duplicate it verbatim.
         if want:
             for i, el in enumerate(wrappers.elements):
-                if self._wrapper_chassis(el) == want and \
-                        self._mech_from_element(el).installed_weapon_count() > 0:
+                candidate = self._mech_from_element(el)
+                if candidate.is_owned and self._wrapper_chassis(el) == want and \
+                        candidate.installed_weapon_count() > 0:
                     src_index = i
                     status = "exact"
                     break
@@ -1630,16 +1669,13 @@ class SaveFile:
             mech.clear_loadout_type()   # ensure active (donor may have been cold/market)
         mech.flush()
 
-        wrappers.elements.append(clone_el)
-        wrappers.count += 1
-
         # Only active-bay mechs are registered in MechStorageList; cold storage
         # records are identified solely by their MechLoadoutType.
         if not cold:
-            slot = copy.deepcopy(storage.elements[0])
-            slot.get("Value").raw_payload = new_guid
-            storage.elements.append(slot)
-            storage.count += 1
+            self._claim_storage_slot(new_guid)
+
+        wrappers.elements.append(clone_el)
+        wrappers.count += 1
         return new_guid, status
 
     def export_mech_loadout(self, mech: "Mech", path: str) -> dict:
@@ -1696,12 +1732,7 @@ class SaveFile:
                 del wrappers.elements[i]
                 wrappers.count -= 1
                 break
-        storage = self._storage_array()
-        for j, slot in enumerate(storage.elements):
-            if slot.get("Value").raw_payload == guid:
-                del storage.elements[j]
-                storage.count -= 1
-                break
+        self._release_storage_slot(guid)
 
     # -- pilots ------------------------------------------------------------
     def pilots(self) -> list[Pilot]:
@@ -2037,28 +2068,30 @@ class SaveFile:
 
         if mechs and data.get("mechs"):
             wrappers = self._wrappers_array()
-            storage = self._storage_array()
             owner_payload = self._sample_owner_payload()
             for entry in data["mechs"]:
                 el = read_property_list(Reader(base64.b64decode(entry["blob"])))
-                new_guid = uuid.uuid4().bytes
                 m = self._mech_from_element(el)
+                # Older editor versions could mistakenly export market/buyback
+                # wrappers as owned mechs. Do not copy those records into the
+                # target save; cold-storage records remain intentionally valid.
+                if m.loadout_type in (MARKET_LOADOUT_TYPE,
+                                      BUYBACK_MARKET_LOADOUT_TYPE):
+                    continue
+                new_guid = uuid.uuid4().bytes
                 m.guid = new_guid
                 owner = el.get("Owner")
                 if owner is not None and owner_payload is not None:
                     _set_leaf(owner, owner_payload)
                 m.flush()
+                # Active-bay mechs are registered in MechStorageList; cold-storage
+                # and other non-owned records are NOT. Detect status from the
+                # imported element itself because its MechLoadoutType marker rode
+                # along in the blob (issue #10).
+                if m.is_owned:
+                    self._claim_storage_slot(new_guid)
                 wrappers.elements.append(el)
                 wrappers.count += 1
-                # Active-bay mechs are registered in MechStorageList; cold-storage
-                # records are NOT (issue #10). Detect cold status from the imported
-                # element itself (the ColdStorageLoadout marker rode along in the
-                # blob) so an exported cold mech comes back into cold storage.
-                if m.loadout_type != COLD_STORAGE_LOADOUT_TYPE:
-                    slot = copy.deepcopy(storage.elements[0])
-                    slot.get("Value").raw_payload = new_guid
-                    storage.elements.append(slot)
-                    storage.count += 1
                 summary["mechs"] += 1
 
         if pilots and data.get("pilots"):
