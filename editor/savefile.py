@@ -1656,7 +1656,7 @@ class SaveFile:
         if want:
             for i, el in enumerate(wrappers.elements):
                 candidate = self._mech_from_element(el)
-                if candidate.is_owned and self._wrapper_chassis(el) == want and \
+                if self._wrapper_chassis(el) == want and \
                         candidate.installed_weapon_count() > 0:
                     src_index = i
                     status = "exact"

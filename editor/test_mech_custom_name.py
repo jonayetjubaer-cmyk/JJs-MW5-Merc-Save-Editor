@@ -56,11 +56,11 @@ def _roundtrip(mech: Mech) -> Mech:
 
 
 class FakeMech:
-    def __init__(self, chassis: str, custom_name: str):
+    def __init__(self, chassis: str, custom_name: str, *, is_owned: bool = True):
         self.chassis = chassis
         self.custom_name = custom_name
         self.guid = b"d" * 16
-        self.is_owned = True
+        self.is_owned = is_owned
         self.template_applied = False
         self.cold_storage = False
 
@@ -78,9 +78,11 @@ class FakeMech:
 
     def clear_loadout_type(self):
         self.cold_storage = False
+        self.is_owned = True
 
     def set_cold_storage(self, _marker_template):
         self.cold_storage = True
+        self.is_owned = False
 
     def flush(self):
         pass
@@ -92,8 +94,13 @@ class FakeElement:
 
 
 class AddMechHarness(SaveFile):
-    def __init__(self, donor: FakeMech):
-        self.wrappers = ArrayValue("StructProperty", 1, [FakeElement(donor)])
+    def __init__(self, donor: FakeMech, *additional_donors: FakeMech):
+        donors = (donor, *additional_donors)
+        self.wrappers = ArrayValue(
+            "StructProperty",
+            len(donors),
+            [FakeElement(mech) for mech in donors],
+        )
         self.storage = ArrayValue("StructProperty", 1, [
             PropertyList([Property("Value", "StructProperty", b"", ZERO_GUID)]),
         ])
@@ -166,6 +173,23 @@ class MechCustomNameTests(unittest.TestCase):
         self.assertEqual(status, "exact")
         self.assertEqual(added.custom_name, "ADR-A")
         self.assertEqual(donor.custom_name, "MY ADDER")
+
+    def test_exact_donor_eligibility_is_independent_of_owned_classification(self):
+        active_donor = FakeMech("JVN-10F_MDA", "JVN-10F")
+        exact_non_owned_donor = FakeMech(
+            "ADR-A_MDA",
+            "MARKET ADDER",
+            is_owned=False,
+        )
+        save = AddMechHarness(active_donor, exact_non_owned_donor)
+
+        _guid, status = save.add_mech("ADR-A_MDA", location="active")
+        added = save.wrappers.elements[-1].mech
+
+        self.assertEqual(status, "exact")
+        self.assertEqual(added.chassis, "ADR-A_MDA")
+        self.assertTrue(added.is_owned)
+        self.assertEqual(added.custom_name, "ADR-A")
 
     def test_cold_add_resets_name_without_claiming_active_storage(self):
         donor = FakeMech("JVN-10F_MDA", "JVN-10F")
