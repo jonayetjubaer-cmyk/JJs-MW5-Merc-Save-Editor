@@ -218,6 +218,15 @@ better because of you:
 
 ## Changelog
 
+**v1.17.3**
+- **Safer mech storage** - added mechs reuse vacant active-bay slots and removed
+  mechs vacate their slots without continually growing the save's storage array.
+- **Correct ownership filtering** - sold buyback mechs no longer appear in the
+  owned roster or exports, and legacy imports skip market/buyback wrappers.
+- **Correct names for added mechs** - exact clones and stock rebuilds use the
+  target variant's stock name instead of inheriting the donor's custom name.
+  (issue #32, PR #33, FiendishDrWu)
+
 **v1.17.2**
 - **Friendlier trait dropdowns** - pilot and mech trait pickers now show friendly
   names first, expand for long stock or mod-added entries, and place unlabeled

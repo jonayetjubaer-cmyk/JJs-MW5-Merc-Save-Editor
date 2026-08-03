@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.17.3
+- **Mech storage now matches the game's slot model.** Adding a mech reuses the
+  first vacant active-bay slot instead of continually growing the storage array,
+  and removing a mech vacates its slot in place. This prevents inaccessible
+  empty positions and repeated add/remove failures. (issue #32, PR #33,
+  FiendishDrWu)
+- **Buyback listings are no longer treated as owned mechs.** Sold mechs awaiting
+  buyback stay out of the active roster and exports. Imports made by older editor
+  versions also skip market and buyback wrappers while preserving genuine cold
+  storage mechs. (issue #32, PR #33, FiendishDrWu)
+- **Added mechs receive the correct stock variant name.** Exact clones and
+  stock-template rebuilds no longer inherit a donor mech's custom name; the
+  target variant is written and preserved through save round-trips. (issue #32,
+  PR #33, FiendishDrWu)
+
 ## v1.17.2
 - **Trait pickers are easier to read and browse.** Pilot and mech trait dropdowns
   now show the friendly name first, expand for long stock or mod-added entries,
