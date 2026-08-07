@@ -1149,6 +1149,164 @@ class Pilot:
 # Inventory items (weapons / equipment / ammo)
 # ---------------------------------------------------------------------------
 
+_INVENTORY_LAYOUT = {
+    "weapon": {
+        "wrapper": "WeaponInventory",
+        "item_struct": "ItemWeapon",
+        "data_struct": "WeaponData",
+        "id_field": "WeaponId",
+        "id_struct": "WeaponDataAssetId",
+        "default_type": "MWProjectileWeaponDataAsset",
+    },
+    "equipment": {
+        "wrapper": "EquipmentInventory",
+        "item_struct": "ItemEquipment",
+        "data_struct": "EquipmentData",
+        "id_field": "EquipmentId",
+        "id_struct": "EquipmentDataAssetId",
+        "default_type": "MWEquipmentDataAsset",
+    },
+}
+
+
+def _inventory_layout(which: str) -> dict:
+    try:
+        return _INVENTORY_LAYOUT[which]
+    except KeyError:
+        raise ValueError("Inventory must be 'weapon' or 'equipment'.") from None
+
+
+def _new_scalar_property(name: str, prop_type: str, payload: bytes) -> Property:
+    w = Writer()
+    w.i64(len(payload))
+    w.write(b"\x00")
+    return Property(name, prop_type, w.bytes(), payload, None)
+
+
+def _new_struct_property(name: str, struct_name: str,
+                         children: list[Property]) -> Property:
+    w = Writer()
+    w.i64(0)
+    w.fstring(struct_name)
+    w.write(bytes(16))
+    return Property(
+        name,
+        "StructProperty",
+        w.bytes(),
+        b"",
+        PropertyList(children),
+        struct_leading_byte=b"\x00",
+    )
+
+
+def _new_guid_property(name: str) -> Property:
+    w = Writer()
+    w.i64(16)
+    w.fstring("Guid")
+    w.write(bytes(16))
+    return Property(
+        name,
+        "StructProperty",
+        w.bytes(),
+        bytes(16),
+        None,
+        struct_leading_byte=b"\x00",
+    )
+
+
+def _new_enum_property(name: str, enum_name: str, value: str) -> Property:
+    payload = write_fstring_payload(value)
+    w = Writer()
+    w.i64(len(payload))
+    w.fstring(enum_name)
+    w.write(b"\x00")
+    return Property(name, "EnumProperty", w.bytes(), payload, None)
+
+
+def _empty_inventory_array(which: str) -> ArrayValue:
+    layout = _inventory_layout(which)
+    return ArrayValue(
+        "StructProperty",
+        0,
+        [],
+        inner_tag_name="Items",
+        inner_struct_name=layout["item_struct"],
+        inner_struct_guid=bytes(16),
+        elements_leading_byte=b"\x00",
+    )
+
+
+def _new_inventory_items_property(which: str) -> Property:
+    w = Writer()
+    w.i64(0)
+    w.fstring("StructProperty")
+    return Property(
+        "Items",
+        "ArrayProperty",
+        w.bytes(),
+        b"",
+        _empty_inventory_array(which),
+        array_leading_byte=b"\x00",
+    )
+
+
+def _new_inventory_wrapper(which: str) -> Property:
+    layout = _inventory_layout(which)
+    return _new_struct_property(
+        layout["wrapper"],
+        layout["wrapper"],
+        [_new_inventory_items_property(which)],
+    )
+
+
+def _default_inventory_element(which: str) -> PropertyList:
+    """Known-good empty item framework for saves whose list has no donor."""
+    layout = _inventory_layout(which)
+    asset_type = layout["default_type"]
+    asset_name = "None"
+    primary_asset = _new_struct_property(
+        "ID",
+        "PrimaryAssetId",
+        [
+            _new_struct_property(
+                "PrimaryAssetType",
+                "PrimaryAssetType",
+                [_new_scalar_property(
+                    "Name", "NameProperty",
+                    write_fstring_payload(asset_type),
+                )],
+            ),
+            _new_scalar_property(
+                "PrimaryAssetName",
+                "NameProperty",
+                write_fstring_payload(asset_name),
+            ),
+        ],
+    )
+    return PropertyList([
+        _new_struct_property(
+            "ItemId",
+            "ItemId",
+            [_new_guid_property("Value")],
+        ),
+        _new_struct_property(
+            "ItemData",
+            layout["data_struct"],
+            [_new_struct_property(
+                layout["id_field"],
+                layout["id_struct"],
+                [primary_asset],
+            ),
+             _new_enum_property(
+                 "HealthState",
+                 "EMWHealthState",
+                 "EMWHealthState::Healthy",
+             )],
+        ),
+        _int_property("Count", 0),
+    ])
+
+
 def _item_id_field(item: PropertyList):
     """An ItemWeapon uses ItemData.WeaponId, an ItemEquipment uses
     ItemData.EquipmentId. Return the ID-bearing sub-property's name."""
@@ -1226,6 +1384,16 @@ class InventoryItem:
             p.raw_payload = value
 
 
+def _usable_inventory_element(element: PropertyList, inventory: str) -> bool:
+    item = InventoryItem(element)
+    layout = _inventory_layout(inventory)
+    return (
+        item._idfield == layout["id_field"]
+        and element.get("Count") is not None
+        and len(item.guid) == 16
+    )
+
+
 def _encode_inventory_template(element: PropertyList) -> str:
     """Serialize one inventory element for use as a portable donor."""
     w = Writer()
@@ -1240,10 +1408,7 @@ def _decode_inventory_template(blob: str, inventory: str) -> PropertyList:
     element = read_property_list(r)
     if r.remaining():
         raise ValueError("Inventory template has trailing data.")
-    item = InventoryItem(element)
-    expected_idfield = "WeaponId" if inventory == "weapon" else "EquipmentId"
-    if (item._idfield != expected_idfield or element.get("Count") is None
-            or len(item.guid) != 16):
+    if not _usable_inventory_element(element, inventory):
         raise ValueError("Inventory template is missing required fields.")
     return element
 
@@ -1957,11 +2122,67 @@ class SaveFile:
         return ok
 
     # -- inventory ---------------------------------------------------------
-    def _inventory_array(self, which: str) -> ArrayValue:
-        """which = 'weapon' | 'equipment'."""
+    def _inventory_array(self, which: str, *, create: bool = False) -> ArrayValue:
+        """Return one inventory array, optionally repairing an empty framework.
+
+        MW5 can omit an empty inventory wrapper/Items property, or serialize a
+        zero-count struct array without the inner element schema. Reads treat
+        those states as empty. A later Add Item call reconstructs only the
+        missing empty framing; undecodable non-empty data is never overwritten.
+        """
+        layout = _inventory_layout(which)
         inv = self.model("InventoryModel").plist
-        struct_name = "WeaponInventory" if which == "weapon" else "EquipmentInventory"
-        return inv.get(struct_name).decoded.get("Items").decoded
+        wrapper = inv.get(layout["wrapper"])
+        if wrapper is None:
+            if not create:
+                return _empty_inventory_array(which)
+            wrapper = _new_inventory_wrapper(which)
+            if which == "weapon":
+                equipment = inv.get("EquipmentInventory")
+                index = (inv.properties.index(equipment)
+                         if equipment is not None else len(inv.properties))
+                inv.properties.insert(index, wrapper)
+            else:
+                inv.properties.append(wrapper)
+
+        if wrapper.decoded is None or not hasattr(wrapper.decoded, "properties"):
+            if not create:
+                return _empty_inventory_array(which)
+            raise RuntimeError(
+                f"The save's {layout['wrapper']} exists but could not be decoded "
+                "safely. Its data was left unchanged."
+            )
+
+        items = wrapper.decoded.get("Items")
+        if items is None:
+            if not create:
+                return _empty_inventory_array(which)
+            items = _new_inventory_items_property(which)
+            wrapper.decoded.properties.append(items)
+
+        arr = items.decoded
+        if arr is None:
+            raw = items.raw_payload
+            declared_count = (read_int(raw) if len(raw) >= 4 else 0)
+            if not create:
+                return _empty_inventory_array(which)
+            if declared_count != 0:
+                raise RuntimeError(
+                    f"The save's {layout['wrapper']}.Items contains "
+                    f"{declared_count} item(s) but could not be decoded safely. "
+                    "Its data was left unchanged."
+                )
+            arr = _empty_inventory_array(which)
+            items.decoded = arr
+            items.raw_payload = b""
+
+        if not hasattr(arr, "elements") or not hasattr(arr, "count"):
+            if not create:
+                return _empty_inventory_array(which)
+            raise RuntimeError(
+                f"The save's {layout['wrapper']}.Items has an unsupported format."
+            )
+        return arr
 
     def weapon_inventory(self) -> list[InventoryItem]:
         return [InventoryItem(el) for el in self._inventory_array("weapon").elements]
@@ -1976,19 +2197,25 @@ class SaveFile:
         inventory = 'weapon' | 'equipment'. If an item with the same asset
         name already exists, its count is increased instead of adding a dup.
         Returns the item's GUID."""
-        arr = self._inventory_array(inventory)
+        arr = self._inventory_array(inventory, create=True)
         # top-up if already present
         for el in arr.elements:
             it = InventoryItem(el)
             if it.asset_name == asset_name and it.asset_type == asset_type:
                 it.count = it.count + count
                 return it.guid
-        if not arr.elements and template is None:
+        donor = next(
+            (el for el in arr.elements
+             if _usable_inventory_element(el, inventory)),
+            None,
+        )
+        if donor is None:
+            donor = template or _default_inventory_element(inventory)
+        if not _usable_inventory_element(donor, inventory):
             raise RuntimeError(
-                f"{inventory} inventory is empty and the export has no donor template; "
-                "add one item in-game first or create a new export with this editor version"
+                f"No usable {inventory} item framework is available."
             )
-        clone = copy.deepcopy(arr.elements[0] if arr.elements else template)
+        clone = copy.deepcopy(donor)
         item = InventoryItem(clone)
         new_guid = uuid.uuid4().bytes
         item.guid = new_guid
@@ -2083,10 +2310,13 @@ class SaveFile:
             templates = {}
             for kind in ("weapon", "equipment"):
                 elements = self._inventory_array(kind).elements
-                if elements:
-                    templates[kind] = _encode_inventory_template(elements[0])
-            if templates:
-                data["inventory_templates"] = templates
+                donor = next(
+                    (el for el in elements
+                     if _usable_inventory_element(el, kind)),
+                    _default_inventory_element(kind),
+                )
+                templates[kind] = _encode_inventory_template(donor)
+            data["inventory_templates"] = templates
         if cbills:
             data["cbills"] = self.cbills
         if factions:

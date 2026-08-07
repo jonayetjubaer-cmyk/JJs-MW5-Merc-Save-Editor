@@ -4,9 +4,18 @@ import os
 import struct
 import tempfile
 import unittest
+from types import SimpleNamespace
 
 from savefile import SaveFile, InventoryItem, write_fstring_payload
-from ue_property import ArrayValue, Property, PropertyList, Writer
+from ue_property import (
+    ArrayValue,
+    Property,
+    PropertyList,
+    Reader,
+    Writer,
+    read_property_list,
+    write_property_list,
+)
 
 
 def _header(size: int) -> bytes:
@@ -74,8 +83,40 @@ class InventoryHarness(SaveFile):
             ),
         }
 
-    def _inventory_array(self, which: str) -> ArrayValue:
+    def _inventory_array(self, which: str, *, create: bool = False) -> ArrayValue:
         return self.arrays[which]
+
+
+class InventoryModelHarness(SaveFile):
+    def __init__(self, properties=None):
+        self.inventory = PropertyList(properties or [])
+
+    def model(self, name: str):
+        if name != "InventoryModel":
+            raise KeyError(name)
+        return SimpleNamespace(plist=self.inventory)
+
+
+def _array_property(raw_payload=b"", decoded=None) -> Property:
+    w = Writer()
+    w.i64(len(raw_payload))
+    w.fstring("StructProperty")
+    return Property(
+        "Items",
+        "ArrayProperty",
+        w.bytes(),
+        raw_payload,
+        decoded,
+        array_leading_byte=b"\x00",
+    )
+
+
+def _roundtrip_inventory(save: InventoryModelHarness) -> InventoryModelHarness:
+    writer = Writer()
+    write_property_list(writer, save.inventory)
+    return InventoryModelHarness(
+        read_property_list(Reader(writer.bytes())).properties
+    )
 
 
 class EmptyInventoryImportTests(unittest.TestCase):
@@ -120,7 +161,7 @@ class EmptyInventoryImportTests(unittest.TestCase):
         self.assertNotEqual(imported_weapon.guid, b"w" * 16)
         self.assertNotEqual(imported_equipment.guid, b"e" * 16)
 
-    def test_old_export_explains_the_required_workaround(self):
+    def test_old_export_uses_built_in_donor_for_empty_inventory(self):
         target = InventoryHarness()
         data = {
             "format": "mw5export",
@@ -132,11 +173,82 @@ class EmptyInventoryImportTests(unittest.TestCase):
             path = os.path.join(td, "old.mw5export")
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(data, f)
-            with self.assertRaisesRegex(RuntimeError, "add one item in-game first"):
-                target.import_from(
-                    path, mechs=False, pilots=False, inventory=True,
-                    cbills=False, factions=False,
-                )
+            summary = target.import_from(
+                path, mechs=False, pilots=False, inventory=True,
+                cbills=False, factions=False,
+            )
+
+        self.assertEqual(summary["items"], 1)
+        imported = InventoryItem(target.arrays["weapon"].elements[0])
+        self.assertEqual(
+            (imported.asset_type, imported.asset_name, imported.count),
+            ("MWTraceWeaponDataAsset", "MediumLaser", 1),
+        )
+
+    def test_missing_inventory_wrapper_opens_empty_and_is_grafted_on_add(self):
+        save = InventoryModelHarness()
+
+        self.assertEqual(save.weapon_inventory(), [])
+        self.assertEqual(save.inventory.properties, [])
+
+        guid = save.add_item(
+            "weapon", "MWTraceWeaponDataAsset", "MediumLaser", 2
+        )
+        reparsed = _roundtrip_inventory(save)
+        items = reparsed.weapon_inventory()
+
+        self.assertEqual(len(items), 1)
+        self.assertEqual(
+            (items[0].asset_type, items[0].asset_name, items[0].count),
+            ("MWTraceWeaponDataAsset", "MediumLaser", 2),
+        )
+        self.assertEqual(items[0].guid, guid)
+
+    def test_missing_items_property_is_grafted_on_add(self):
+        wrapper = _struct("EquipmentInventory", [], "EquipmentInventory")
+        save = InventoryModelHarness([wrapper])
+
+        self.assertEqual(save.equipment_inventory(), [])
+        save.add_item(
+            "equipment", "MWHeatSinkDataAsset", "DoubleHeatSink", 3
+        )
+
+        items = _roundtrip_inventory(save).equipment_inventory()
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0].asset_name, "DoubleHeatSink")
+        self.assertEqual(items[0].count, 3)
+
+    def test_undecoded_zero_count_array_is_rebuilt_on_add(self):
+        items = _array_property(struct.pack("<i", 0), decoded=None)
+        wrapper = _struct(
+            "WeaponInventory", [items], "WeaponInventory"
+        )
+        save = InventoryModelHarness([wrapper])
+
+        self.assertEqual(save.weapon_inventory(), [])
+        save.add_item(
+            "weapon", "MWProjectileWeaponDataAsset", "Autocannon10", 1
+        )
+
+        reparsed = _roundtrip_inventory(save).weapon_inventory()
+        self.assertEqual(len(reparsed), 1)
+        self.assertEqual(reparsed[0].asset_name, "Autocannon10")
+
+    def test_undecodable_nonempty_array_is_preserved_and_explained(self):
+        raw = struct.pack("<i", 1) + b"not-a-valid-item"
+        items = _array_property(raw, decoded=None)
+        wrapper = _struct(
+            "WeaponInventory", [items], "WeaponInventory"
+        )
+        save = InventoryModelHarness([wrapper])
+
+        self.assertEqual(save.weapon_inventory(), [])
+        with self.assertRaisesRegex(
+                RuntimeError, "1 item.*could not be decoded safely"):
+            save.add_item(
+                "weapon", "MWTraceWeaponDataAsset", "MediumLaser", 1
+            )
+        self.assertEqual(items.raw_payload, raw)
 
 
 if __name__ == "__main__":
