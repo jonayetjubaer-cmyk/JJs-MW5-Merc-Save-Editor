@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.17.4
+- **Missing inventory frameworks are recovered safely.** Saves that omit an
+  empty `WeaponInventory` or `EquipmentInventory` now open without the
+  `NoneType`/`decoded` error. Adding an item reconstructs only the missing empty
+  framework, while undecodable non-empty inventory data is preserved instead of
+  being overwritten. Older exports without inventory donor templates can also
+  import into an empty inventory. Confirmed against the affected save and an
+  additional fully empty inventory save. (issue #35, PR #36, TheSwedishNash)
+
 ## v1.17.3
 - **Mech storage now matches the game's slot model.** Adding a mech reuses the
   first vacant active-bay slot instead of continually growing the storage array,

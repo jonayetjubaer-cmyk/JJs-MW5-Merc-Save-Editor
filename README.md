@@ -218,6 +218,13 @@ better because of you:
 
 ## Changelog
 
+**v1.17.4**
+- **Missing inventory recovery** - saves that omit an empty weapon or equipment
+  inventory now open normally, and adding an item safely rebuilds the missing
+  framework. Unreadable non-empty inventory data is left untouched. Older
+  exports can also import items without a saved donor template. (issue #35,
+  PR #36, TheSwedishNash)
+
 **v1.17.3**
 - **Safer mech storage** - added mechs reuse vacant active-bay slots and removed
   mechs vacate their slots without continually growing the save's storage array.
