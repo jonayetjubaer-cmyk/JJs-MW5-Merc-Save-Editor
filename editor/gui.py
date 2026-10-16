@@ -51,6 +51,7 @@ from item_catalog import CATALOG, CATEGORY_INVENTORY, WEAPONS, EQUIPMENT, AMMO
 from trait_catalog import (PILOT_TRAITS, MECH_TRAITS,
                            dropdown_values as trait_dropdown_values,
                            resolve as resolve_trait)
+import pilot_catalog
 from savefile import weapon_class, hardpoint_class, ARMOR_PARTS, REAR_PARTS
 from stock_templates import max_armor_caps, stock_types
 
@@ -913,6 +914,57 @@ class EditorApp(tk.Tk):
         ttk.Button(taf, text="Add", command=self.on_add_pilot_trait).pack(side="left", padx=4)
         ttk.Button(taf, text="Remove", command=self.on_remove_pilot_trait).pack(side="left")
 
+        # -- appearance (each button applies immediately, like the trait Add button) --
+        ar = tr + 4
+        ttk.Separator(form, orient="horizontal").grid(row=ar, column=0, columnspan=3, sticky="ew", pady=6)
+        ttk.Label(form, text="Appearance", font=("", 9, "bold")).grid(row=ar + 1, column=0, sticky="w")
+        sexf = ttk.Frame(form)
+        sexf.grid(row=ar + 1, column=1, columnspan=2, sticky="w")
+        self.pilot_sex_var = tk.StringVar(value="All")
+        sex_cb = ttk.Combobox(sexf, textvariable=self.pilot_sex_var, width=8, state="readonly",
+                              values=pilot_catalog.SEX_FILTERS)
+        sex_cb.pack(side="left")
+        sex_cb.bind("<<ComboboxSelected>>", lambda e: self._refresh_pilot_looks())
+        ttk.Label(sexf, text="Filter by sex",
+                  style="Muted.TLabel").pack(side="left", padx=6)
+
+        def look_row(label, row, title, command, button):
+            # One compact row (label, picker, button) so it fits like the trait row.
+            holder = ttk.Frame(form)
+            holder.grid(row=row, column=0, columnspan=3, sticky="w", pady=2)
+            ttk.Label(holder, text=label, width=8).pack(side="left")
+            var = tk.StringVar()
+            picker = SearchablePicker(holder, textvariable=var, width=26, title=title)
+            picker.pack(side="left")
+            ttk.Button(holder, text=button, command=command).pack(side="left", padx=4)
+            return var, picker
+
+        self.pilot_portrait_var, self.pilot_portrait_cb = look_row(
+            "Portrait", ar + 2, "Choose portrait", self.on_set_pilot_portrait, "Set")
+        self.pilot_voice_var, self.pilot_voice_cb = look_row(
+            "Voice", ar + 3, "Choose dialogue voice", self.on_set_pilot_voice, "Set")
+        self.pilot_persona_var, self.pilot_persona_cb = look_row(
+            "Persona", ar + 4, "Choose persona", self.on_apply_persona, "Apply")
+        self.pilot_bio_caption = tk.StringVar()
+        ttk.Label(form, textvariable=self.pilot_bio_caption, style="Muted.TLabel").grid(
+            row=ar + 6, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        bf = ttk.Frame(form)
+        bf.grid(row=ar + 7, column=0, columnspan=3, sticky="w", pady=2)
+        ttk.Label(bf, text="Bio", width=8).pack(side="left", anchor="n")
+        self.pilot_bio_text = tk.Text(bf, width=34, height=5, wrap="word")
+        self.pilot_bio_text.pack(side="left")
+        ttk.Button(bf, text="Set", command=self.on_set_pilot_bio).pack(
+            side="left", padx=4, anchor="n")
+        popts = ttk.Frame(form)
+        popts.grid(row=ar + 5, column=0, columnspan=3, sticky="w")
+        ttk.Label(popts, text="", width=8).pack(side="left")
+        self.pilot_persona_all_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(popts, text="Show all personas", variable=self.pilot_persona_all_var,
+                        command=self._refresh_pilot_looks).pack(side="left")
+        self.pilot_persona_text_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(popts, text="Also set name & bio",
+                        variable=self.pilot_persona_text_var).pack(side="left", padx=8)
+
     # -- inventory tab -----------------------------------------------------
     def _build_inventory_tab(self):
         top = ttk.Frame(self.inv_tab)
@@ -1610,13 +1662,143 @@ class EditorApp(tk.Tk):
         if idx is None:
             return
         p = self.save.pilots()[idx]
+        self._load_pilot_stats(p)
+        self._load_pilot_look(p)
+        self._load_pilot_bio(p)
+        self._refresh_pilot_looks()
+        self._refresh_pilot_traits(p)
+
+    # The sections below reload only their own widgets, so a button that
+    # changes one group of fields never discards pending edits in the others.
+    def _load_pilot_stats(self, p):
+        """Name, salary, skill XP and caps -- the 'Apply to Pilot' group."""
         self.pilot_vars["callsign"].set(p.callsign)
         self.pilot_vars["full_name"].set(p.full_name)
         self.pilot_vars["salary"].set(str(p.salary))
         for sk in SKILLS:
             self.pilot_vars[f"skill_{sk}"].set(str(p.skill(sk)))
             self.pilot_vars[f"cap_{sk}"].set(str(p.skill_cap(sk)))
-        self._refresh_pilot_traits(p)
+
+    def _load_pilot_names(self, p):
+        """Just the callsign and full-name fields."""
+        self.pilot_vars["callsign"].set(p.callsign)
+        self.pilot_vars["full_name"].set(p.full_name)
+
+    def _load_pilot_look(self, p):
+        self.pilot_portrait_var.set(pilot_catalog.portrait_display(p.portrait))
+        self.pilot_voice_var.set(pilot_catalog.voice_display(p.voice))
+
+    def _load_pilot_bio(self, p):
+        self.pilot_bio_text.delete("1.0", "end")
+        self.pilot_bio_text.insert("1.0", p.bio)
+        self.pilot_bio_caption.set(
+            "Current bio. Edit it, then click Set." if p.bio
+            else "This pilot has no bio. Type one, then click Set.")
+
+    def _update_pilot_list_label(self, idx, p):
+        """Refresh one roster entry's text without touching the form."""
+        self.pilot_list.delete(idx)
+        self.pilot_list.insert(idx, p.callsign or p.full_name or "(pilot)")
+        self.pilot_list.selection_set(idx)
+
+    def _refresh_pilot_looks(self):
+        """Portrait / voice / persona choices: the catalog plus whatever the
+        loaded save already uses (so modded or unknown assets stay selectable)."""
+        pilots = self.save.pilots() if self.save else []
+        sex = self.pilot_sex_var.get()
+        self.pilot_portrait_cb["values"] = [
+            pilot_catalog.portrait_display(name) for name in pilot_catalog.asset_choices(
+                [p.portrait for p in pilots], pilot_catalog.PORTRAITS,
+                pilot_catalog.portrait_sex, sex)]
+        self.pilot_voice_cb["values"] = [
+            pilot_catalog.voice_display(name) for name in pilot_catalog.asset_choices(
+                [p.voice for p in pilots], pilot_catalog.VOICES,
+                pilot_catalog.voice_sex, sex)]
+        self.pilot_persona_cb["values"] = pilot_catalog.persona_choices(
+            hireable_only=not self.pilot_persona_all_var.get())
+
+    def _set_pilot_look(self, field, var, label):
+        """Write one appearance field to the selected pilot right away."""
+        if not self._guard():
+            return
+        idx = self._selected_pilot_index()
+        if idx is None:
+            return self._need_selection()
+        value = pilot_catalog.resolve_asset(var.get())
+        if not value:
+            return messagebox.showinfo(f"Pick {label}", f"Choose or type a {label} asset name.")
+        p = self.save.pilots()[idx]
+        try:
+            setattr(p, field, value)
+        except ValueError as exc:
+            return messagebox.showerror("Invalid input", str(exc))
+        show = pilot_catalog.portrait_display if field == "portrait" else pilot_catalog.voice_display
+        var.set(show(getattr(p, field)))
+        self.status.set(f"Set {p.callsign}'s {label} to {value}. Remember to Save.")
+
+    def on_set_pilot_portrait(self):
+        self._set_pilot_look("portrait", self.pilot_portrait_var, "portrait")
+
+    def on_set_pilot_voice(self):
+        self._set_pilot_look("voice", self.pilot_voice_var, "voice")
+
+    def on_set_pilot_bio(self):
+        """Write the bio box to the selected pilot (as one text; Bio1/Bio2 cleared)."""
+        if not self._guard():
+            return
+        idx = self._selected_pilot_index()
+        if idx is None:
+            return self._need_selection()
+        p = self.save.pilots()[idx]
+        text = self.pilot_bio_text.get("1.0", "end").strip()
+        if text != p.bio:
+            p.bio = text
+        self.status.set(f"Set {p.callsign}'s bio. Remember to Save.")
+
+    def on_apply_persona(self):
+        if not self._guard():
+            return
+        idx = self._selected_pilot_index()
+        if idx is None:
+            return self._need_selection()
+        persona = pilot_catalog.find_persona(self.pilot_persona_var.get())
+        if persona is None:
+            return messagebox.showinfo("Pick persona", "Choose a persona from the list.")
+        p = self.save.pilots()[idx]
+        try:
+            if persona.get("portrait"):
+                p.portrait = persona["portrait"]
+            if persona.get("voice"):
+                p.voice = persona["voice"]
+            note = ""
+            text_changed = bio_changed = False
+            if self.pilot_persona_text_var.get():
+                # Generic template personas have no name or bio of their own;
+                # keep the pilot's own rather than writing an asset name.
+                if pilot_catalog.has_name(persona):
+                    p.full_name = pilot_catalog.persona_name(persona)
+                    p.callsign = pilot_catalog.persona_callsign(persona)
+                    text_changed = True
+                else:
+                    note = " (no name in persona; name kept)"
+                parts = pilot_catalog.persona_bio_parts(persona)
+                if parts is not None:
+                    p.set_bio_parts(*parts)
+                    bio_changed = True
+                else:
+                    note += " (no bio in persona; bio kept)"
+        except ValueError as exc:
+            return messagebox.showerror("Can't apply persona", str(exc))
+        # Reload only what the persona wrote; other pending edits stay put.
+        self._load_pilot_look(p)
+        self._refresh_pilot_looks()
+        if text_changed:
+            self._load_pilot_names(p)
+            self._update_pilot_list_label(idx, p)
+        if bio_changed:
+            self._load_pilot_bio(p)
+        self.status.set(f"Applied persona '{persona['asset_name']}' to pilot #{idx}{note}. "
+                        "Remember to Save.")
 
     def _refresh_pilot_traits(self, pilot=None):
         if pilot is None:
@@ -1686,7 +1868,9 @@ class EditorApp(tk.Tk):
                 p.set_skill(sk, xp[sk])
                 if sk in CAPPED_SKILLS:
                     p.set_skill_cap(sk, caps[sk])
-            self._refresh_pilots()
+            # Reload only this group; a pending portrait/voice/bio edit survives.
+            self._load_pilot_stats(p)
+            self._update_pilot_list_label(idx, p)
             self.status.set(f"Applied changes to pilot #{idx}. Remember to Save.")
         except ValueError as exc:
             messagebox.showerror("Invalid input", f"Salary, skill XP and caps must be whole numbers.\n{exc}")

@@ -27,7 +27,9 @@ nothing else needed.
 - **Mechs** — add any chassis (full vanilla + DLC roster), swap a mech's chassis,
   repair armor (single or *all* mechs at once), or remove mechs.
 - **Pilots** — edit callsign, name, salary, and all skill XP; add or remove
-  **traits**; add brand-new pilots or remove them.
+  **traits**; change a pilot's **portrait and voice** (with a male/female filter)
+  or copy a whole **persona** (portrait, voice, name, bio) from a scripted
+  character; add brand-new pilots or remove them.
 - **Inventory** — add weapons, equipment, and ammo (with searchable lists), set
   counts, or remove items.
 - **C-Bills** — set your money to anything (one-click max).
