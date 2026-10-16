@@ -2035,6 +2035,49 @@ class SaveFile:
         roster = self.model("RosterModel").plist.get("PilotRoster").decoded
         return [Pilot(el) for el in roster.elements]
 
+    def reorder_pilots(self, order: list[int]):
+        """Persist a roster permutation without rewriting any pilot record.
+
+        Player/commander records keep their existing slots. All IDs, traits,
+        appearance, skills and assignment references remain unchanged.
+        """
+        roster = self.model("RosterModel").plist.get("PilotRoster").decoded
+        size = len(roster.elements)
+        order = list(order)
+        if (roster.count != size or len(order) != size
+                or any(type(index) is not int for index in order)
+                or set(order) != set(range(size))):
+            raise ValueError("Pilot order must contain every roster index exactly once.")
+        if any(Pilot(element).is_commander and order[index] != index
+               for index, element in enumerate(roster.elements)):
+            raise ValueError("Player/commander pilots must stay in their existing slots.")
+        roster.elements[:] = [roster.elements[index] for index in order]
+
+    def move_pilot(self, index: int, offset: int) -> int:
+        """Move a regular pilot by an offset among movable slots; return its slot.
+
+        Offsets clamp at the start/end. Protected player slots are skipped.
+        """
+        pilots = self.pilots()
+        if type(index) is not int or not 0 <= index < len(pilots):
+            raise ValueError("Pilot index is outside the roster.")
+        if type(offset) is not int:
+            raise ValueError("Pilot move offset must be a whole number.")
+        movable = [i for i, pilot in enumerate(pilots) if not pilot.is_commander]
+        if index not in movable:
+            return index
+        source = movable.index(index)
+        target = max(0, min(len(movable) - 1, source + offset))
+        if source == target:
+            return index
+        regular_order = list(movable)
+        regular_order.insert(target, regular_order.pop(source))
+        order = list(range(len(pilots)))
+        for slot, original in zip(movable, regular_order):
+            order[slot] = original
+        self.reorder_pilots(order)
+        return movable[target]
+
     def add_pilot(self, callsign: str, full_name: str | None = None,
                   skills: dict | None = None, salary: int = 10000,
                   hiring_cost: int = 0, portrait: str | None = None,

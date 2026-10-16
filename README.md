@@ -29,7 +29,8 @@ nothing else needed.
 - **Pilots** — edit callsign, name, salary, and all skill XP; add or remove
   **traits**; change a pilot's **portrait and voice** (with a male/female filter)
   or copy a whole **persona** (portrait, voice, name, bio) from a scripted
-  character; add brand-new pilots or remove them.
+  character; add brand-new pilots or remove them. Arrange the saved roster with
+  **Move Up / Down / Top / Bottom**, keeping player/commander slots fixed.
 - **Inventory** — add weapons, equipment, and ammo (with searchable lists), set
   counts, or remove items.
 - **C-Bills** — set your money to anything (one-click max).
@@ -57,6 +58,9 @@ nothing else needed.
 3. Click **Open…** — it points straight at your MW5 saves folder
    (`%LOCALAPPDATA%\MW5Mercs\Saved\SaveGames`).
 4. Edit what you like across the **Mechs / Pilots / Inventory / Factions** tabs.
+   In **Pilots**, the move buttons change the saved roster order. Apply/Set any
+   field edits before saving. The editor retains the new order after reloading;
+   the game's deployment-screen order still needs confirmation.
 5. Click **Save**, then load the save in-game.
 
 ---
@@ -220,6 +224,14 @@ better because of you:
 - Everyone on Nexus and GitHub who has filed reports and suggestions.
 
 ## Changelog
+
+**v1.19.0**
+- **Pilot appearance:** searchable portrait/voice pickers, editable biography,
+  and persona templates, contributed by altNightHawk in PR #41.
+- **Saved pilot order:** Move Up/Down/Top/Bottom while keeping player slots fixed
+  and pending edits on the selected pilot (#42). Deployment-screen behaviour
+  still needs in-game confirmation.
+- **Pending edits:** Apply and persona changes preserve unrelated typed fields.
 
 **v1.18.2**
 - **Searchable pickers:** pilot traits and inventory items use Browse windows

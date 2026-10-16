@@ -248,7 +248,7 @@ def _readable_combobox(parent, *, width: int, **kwargs) -> ttk.Combobox:
     return combo
 
 
-APP_VERSION = "1.18.2"
+APP_VERSION = "1.19.0"
 
 # update check (GitHub is the source of truth; Nexus may lag a release behind)
 GITHUB_REPO = "jonayetjubaer-cmyk/JJs-MW5-Merc-Save-Editor"
@@ -832,9 +832,19 @@ class EditorApp(tk.Tk):
         left.pack(side="left", fill="y", padx=(0, 6), pady=4)
         self.pilot_list = tk.Listbox(left, width=22, exportselection=False)
         self.pilot_list.pack(fill="y", expand=True)
-        self.pilot_list.bind("<<ListboxSelect>>", lambda e: self._load_pilot_form())
+        self.pilot_list.bind("<<ListboxSelect>>", self._on_pilot_select)
         pbtns = ttk.Frame(left)
         pbtns.pack(fill="x", pady=4)
+        ttk.Label(pbtns, text="Saved roster order", font=("", 9, "bold")).pack(anchor="w")
+        for choices in ((("Move Up", -1), ("Move Down", 1)),
+                        (("Move to Top", "top"), ("Move to Bottom", "bottom"))):
+            row = ttk.Frame(pbtns)
+            row.pack(fill="x", pady=1)
+            for label, offset in choices:
+                ttk.Button(row, text=label, command=lambda value=offset: self.on_move_pilot(value)
+                           ).pack(side="left", fill="x", expand=True)
+        ttk.Label(pbtns, text="Player slots stay fixed.\nSave to keep the new order.",
+                  style="Muted.TLabel").pack(anchor="w", pady=(0, 4))
         ttk.Button(pbtns, text="Add Pilot…", command=self.on_add_pilot).pack(fill="x", pady=1)
         ttk.Button(pbtns, text="Remove Pilot", command=self.on_remove_pilot).pack(fill="x", pady=1)
 
@@ -1641,8 +1651,8 @@ class EditorApp(tk.Tk):
         return asset_name(variant) if variant else None
 
     # -- pilot actions -----------------------------------------------------
-    def _refresh_pilots(self):
-        previous = self._selected_pilot_index()
+    def _refresh_pilots(self, selected=None, reload_form=True):
+        previous = self._selected_pilot_index() if selected is None else selected
         self.pilot_list.delete(0, "end")
         pilots = self.save.pilots()
         for p in pilots:
@@ -1650,8 +1660,41 @@ class EditorApp(tk.Tk):
         if pilots:
             idx = min(previous if previous is not None else 0, len(pilots) - 1)
             self.pilot_list.selection_set(idx)
+            self.pilot_list.activate(idx)
             self.pilot_list.see(idx)
+            if reload_form:
+                self._load_pilot_form()
+
+    def _on_pilot_select(self, event=None):
+        idx = self._selected_pilot_index()
+        if self.save is None or idx is None:
+            return
+        # A reorder can generate a selection event for the same pilot at a
+        # different index. Preserve its pending fields instead of reloading.
+        pilot = self.save.pilots()[idx]
+        if pilot.element is not getattr(self, "_loaded_pilot_element", None):
             self._load_pilot_form()
+
+    def on_move_pilot(self, offset):
+        if not self._guard():
+            return
+        idx = self._selected_pilot_index()
+        if idx is None:
+            return self._need_selection()
+        pilots = self.save.pilots()
+        if pilots[idx].is_commander:
+            self.status.set("Player/commander pilots keep their existing roster slots.")
+            return
+        if offset == "top":
+            offset = -len(pilots)
+        elif offset == "bottom":
+            offset = len(pilots)
+        new_index = self.save.move_pilot(idx, offset)
+        if new_index == idx:
+            self.status.set("Pilot is already at that end of the movable roster.")
+            return
+        self._refresh_pilots(selected=new_index, reload_form=False)
+        self.status.set(f"Moved pilot to roster position {new_index + 1}. Remember to Save.")
 
     def _selected_pilot_index(self):
         sel = self.pilot_list.curselection()
@@ -1667,6 +1710,7 @@ class EditorApp(tk.Tk):
         self._load_pilot_bio(p)
         self._refresh_pilot_looks()
         self._refresh_pilot_traits(p)
+        self._loaded_pilot_element = p.element
 
     # The sections below reload only their own widgets, so a button that
     # changes one group of fields never discards pending edits in the others.

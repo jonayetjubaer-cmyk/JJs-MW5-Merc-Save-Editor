@@ -178,6 +178,52 @@ class PilotLookUiTests(unittest.TestCase):
         self.assertEqual((pilot.portrait, pilot.voice), ("MalePilot", pilot.voice))
         self.assertEqual(pilot.bio_parts(), ["Bio one.", "Bio two.", "Bio three."])
 
+    def test_reordering_retains_pending_edits_and_apply_targets_moved_pilot(self):
+        self._select(0)
+        original = self.app.save.pilots()[0]
+        other = self.app.save.pilots()[1]
+        self._type_pending_edits()
+        self.app.pilot_portrait_var.set("Female_Rank3_1")
+        self.app.pilot_voice_var.set("FemaleAlly1")
+        self.app.on_move_pilot("bottom")
+        self.app.pilot_list.event_generate("<<ListboxSelect>>")
+        self.app.update()
+        self.assertEqual(self.app.pilot_list.curselection(), (1,))
+        self.assertIs(self.app.save.pilots()[1].element, original.element)
+        self.assertEqual(self.app.pilot_vars["callsign"].get(), "Typed Callsign")
+        self.assertEqual(self.app.pilot_vars["skill_Ballistics"].get(), "123456")
+        self.assertEqual(self.app.pilot_vars["cap_Ballistics"].get(), "7")
+        self.assertEqual(self.app.pilot_bio_text.get("1.0", "end").strip(), "Typed bio.")
+        self.app.on_apply_pilot()
+        self.app.on_set_pilot_portrait()
+        self.app.on_set_pilot_voice()
+        self.app.on_set_pilot_bio()
+        self.assertEqual(original.callsign, "Typed Callsign")
+        self.assertEqual(original.portrait, "Female_Rank3_1")
+        self.assertEqual(original.voice, "FemaleAlly1")
+        self.assertEqual(original.bio_parts(), ["Typed bio.", "", ""])
+        self.assertEqual(other.portrait, "Raptor")
+        self.assertEqual(other.voice, "MaleAlly9")
+        self.assertNotEqual(other.callsign, "Typed Callsign")
+        self._select(0)
+        self.assertEqual(gui.pilot_catalog.resolve_asset(self.app.pilot_portrait_var.get()), "Raptor")
+        self._select(1)
+        self.assertEqual(self.app.pilot_vars["callsign"].get(), "Typed Callsign")
+
+    def test_reordering_no_selection_and_protected_player_are_safe(self):
+        self._select(0)
+        pilot = self.app.save.pilots()[0]
+        from savefile import write_fstring_payload
+        pilot.element.get("LockedPlayerSlot").raw_payload = write_fstring_payload(
+            "EMechWarriorPlayerSlot::Player1")
+        self.app.on_move_pilot("bottom")
+        self.assertIs(self.app.save.pilots()[0].element, pilot.element)
+        self.assertIn("keep their existing", self.app.status.get())
+        self.app.pilot_list.selection_clear(0, "end")
+        with patch.object(self.app, "_need_selection") as info:
+            self.app.on_move_pilot(-1)
+        info.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()
