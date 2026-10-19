@@ -36,6 +36,12 @@ nothing else needed.
 - **C-Bills** — set your money to anything (one-click max).
 - **Factions** — edit your standing with all 17 factions and your company
   reputation.
+- **Cantina (experimental)** — edit points/tiers for all five built-in career
+  paths, including not-started paths, and unlock their corresponding mech
+  upgrades. **Sync upgrade unlocks** repairs missing rewards from earlier edits
+  without changing points. Existing upgrades are kept when lowering points;
+  jobs, offers and campaign unlocks are preserved. Use Save As on a test copy:
+  in-game upgrade availability and job progression still need confirmation.
 
 ---
 
@@ -224,6 +230,13 @@ better because of you:
 - Everyone on Nexus and GitHub who has filed reports and suggestions.
 
 ## Changelog
+
+**v1.19.1**
+- **Cantina fix (#43):** edit not-started paths; points/tier changes now also
+  write the separate mech-upgrade unlock list. Max all includes the 50 stock
+  career rewards; Sync upgrade unlocks repairs saves edited with older releases.
+- Preserves existing/mod upgrades and jobs. Verified against the reporter's save
+  and 15 other real saves; in-game confirmation remains outstanding.
 
 **v1.19.0**
 - **Pilot appearance:** searchable portrait/voice pickers, editable biography,

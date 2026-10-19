@@ -37,6 +37,7 @@ def thresholds(asset):
     tag = struct.pack("<IIII", names.index("CareerPoints"), 0,
                       names.index("IntProperty"), 0)
     points = []
+    rewards = []
     start = array_at
     while True:
         at = export.find(tag, start)
@@ -45,10 +46,29 @@ def thresholds(asset):
         if struct.unpack_from("<q", export, at + 16)[0] != 4 or export[at+24] != 0:
             raise ValueError("Unsupported CareerPoints property")
         points.append(struct.unpack_from("<i", export, at + 25)[0])
+        end = export.find(tag, at + len(tag))
+        end = end if end >= 0 else len(export)
+        reward_tag = struct.pack("<IIII", names.index("MechTraitReward"), 0,
+                                 names.index("StructProperty"), 0)
+        reward_at = export.index(reward_tag, at, end)
+        reward_size = struct.unpack_from("<q", export, reward_at + 16)[0]
+        if names[struct.unpack_from("<i", export, reward_at + 24)[0]] != "MechTraitDataAssetId":
+            raise ValueError("Unsupported career reward struct")
+        reward = export[reward_at + 49:reward_at + 49 + reward_size]
+        name_tag = struct.pack("<IIII", names.index("PrimaryAssetName"), 0,
+                               names.index("NameProperty"), 0)
+        name_at = reward.index(name_tag)
+        if struct.unpack_from("<q", reward, name_at + 16)[0] != 8:
+            raise ValueError("Unsupported reward asset name")
+        name, number = struct.unpack_from("<ii", reward, name_at + 25)
+        if number or not names[name].endswith(("_Trait1", "_Trait2")):
+            raise ValueError("Unexpected career reward asset")
+        rewards.append(names[name])
         start = at + len(tag)
     if len(points) != array_count or array_count != 10 or points != sorted(points):
         raise ValueError("Unexpected tier count/order")
-    return {"points": points, "uasset_sha256": hashlib.sha256(data).hexdigest(),
+    return {"points": points, "rewards": rewards,
+            "uasset_sha256": hashlib.sha256(data).hexdigest(),
             "uexp_sha256": hashlib.sha256(export).hexdigest()}
 
 

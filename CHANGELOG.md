@@ -1,5 +1,28 @@
 # Changelog
 
+## v1.19.1
+- **Cantina paths can be edited before earning points (issue #43).** All five
+  built-in paths now appear, including not-started paths at zero. Reading a save
+  creates nothing; Set points/tier or Max all paths creates only the required
+  career-progress records, using the observed native save structures.
+- **Cantina edits now update upgrade unlocks too.** Career points and unlocked
+  mech upgrades live in separate models. Setting points/tier adds the built-in
+  upgrade rewards through the resulting tier. Max all paths includes all 50
+  career rewards, mapped directly from the unmodified DLC9 game assets.
+- **Repair earlier edits with Sync upgrade unlocks.** This adds missing upgrades
+  for the current points without changing career progress. Repeated use does not
+  add duplicates. Lowering points never revokes existing upgrades; existing and
+  mod-added upgrades and career paths are preserved. Built-in mappings may differ
+  from mods that change career thresholds or rewards.
+- **Edits are staged before either model is changed.** Unsupported career or
+  unlock layouts abort the operation without partially applying points. Jobs,
+  offers, pending claims and campaign unlocks are preserved.
+- 113 automated tests pass. Validated against the issue #43 attachment: 8 upgrade unlocks became 50, with
+  only MechTraitModel changed. Save As/reload and repeat repair pass. Unchanged
+  browsing and edited-save checks pass on 16 real saves, including creation of
+  missing progress in 14 saves. In-game upgrade availability and subsequent job
+  progression still need confirmation from testing in MW5.
+
 ## v1.19.0
 - **Arrange the saved pilot roster (issue #42).** Move Up, Move Down, Move to
   Top and Move to Bottom persist your custom order in the save. Player/commander

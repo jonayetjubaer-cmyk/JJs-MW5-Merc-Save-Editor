@@ -248,7 +248,7 @@ def _readable_combobox(parent, *, width: int, **kwargs) -> ttk.Combobox:
     return combo
 
 
-APP_VERSION = "1.19.0"
+APP_VERSION = "1.19.1"
 
 # update check (GitHub is the source of truth; Nexus may lag a release behind)
 GITHUB_REPO = "jonayetjubaer-cmyk/JJs-MW5-Merc-Save-Editor"
@@ -1158,20 +1158,23 @@ class EditorApp(tk.Tk):
         self.status.set(f"Set all faction standings to {value}. Remember to Save.")
 
     def _build_cantina_tab(self):
-        self.cantina_info = tk.StringVar(value="Open a save with existing Cantina career progress.")
+        self.cantina_info = tk.StringVar(value="Open a save to edit Cantina career progress.")
         ttk.Label(self.cantina_tab, textvariable=self.cantina_info, wraplength=650).pack(
             fill="x", padx=8, pady=8)
         ttk.Label(self.cantina_tab, wraplength=650, text=(
-                    "Experimental: edits existing path points only. Jobs, offers, campaign unlocks "
-            "and queued reward claims are preserved. Test with Save As on a copy; "
-            "in-game unlock/reward behaviour is not yet verified.")).pack(fill="x", padx=8)
+            "Set points/tier also unlocks the corresponding built-in mech upgrades. "
+            "Missing paths appear at zero and are created only when edited. Lowering points "
+            "keeps existing upgrades. Jobs, offers and campaign unlocks stay unchanged. "
+            "Experimental: test with Save As on a copy.")).pack(fill="x", padx=8)
         ttk.Label(self.cantina_tab, wraplength=650, text=(
             "Current game assets give Mech Collector tiers 5 and 6 the same "
-            "95-point threshold; the effective tier will display as 6.")).pack(fill="x", padx=8)
+            "95-point threshold; the effective tier will display as 6. "
+            "Thresholds and upgrade rewards use the built-in game data; mods changing careers may differ.")
+                  ).pack(fill="x", padx=8)
         self.cantina_tree = ttk.Treeview(self.cantina_tab,
-                                        columns=("path", "points", "tier"), show="headings")
+                                        columns=("path", "points", "tier", "record"), show="headings")
         for column, label, width in (("path", "Career path", 260), ("points", "Points", 100),
-                                     ("tier", "Tier from points", 130)):
+                                     ("tier", "Tier from points", 130), ("record", "Progress record", 130)):
             self.cantina_tree.heading(column, text=label)
             self.cantina_tree.column(column, width=width)
         self.cantina_tree.pack(fill="both", expand=True, padx=8, pady=8)
@@ -1180,7 +1183,8 @@ class EditorApp(tk.Tk):
         self._cantina_buttons = []
         for label, command in (("Set tier…", lambda: self._edit_cantina(True)),
                                ("Set points…", lambda: self._edit_cantina(False)),
-                               ("Max all existing paths…", self._max_cantina)):
+                               ("Max all paths…", self._max_cantina),
+                               ("Sync upgrade unlocks…", self._sync_cantina_unlocks)):
             button = ttk.Button(actions, text=label, command=command, state="disabled")
             button.pack(side="left", padx=(0, 6))
             self._cantina_buttons.append(button)
@@ -1190,16 +1194,18 @@ class EditorApp(tk.Tk):
         self.cantina_tree.delete(*self.cantina_tree.get_children())
         try:
             self._cantina_paths = cantina.paths(self.save) if self.save else []
-            info = ("Existing Cantina paths. Tier thresholds come from the built-in game assets."
+            info = ("Cantina paths. Not-started paths remain unchanged until you edit them."
                     if self._cantina_paths else
-                    "No existing Cantina career-progress records in this save. No records will be created.")
+                    "This save has no supported Cantina career model.")
         except ValueError as exc:
             self._cantina_paths = []
             info = str(exc)
         self.cantina_info.set(info)
         for i, path in enumerate(self._cantina_paths):
             self.cantina_tree.insert("", "end", iid=str(i),
-                                     values=(path.label, path.points, path.tier if path.tier is not None else "Unknown"))
+                                     values=(path.label, path.points,
+                                             path.tier if path.tier is not None else "Unknown",
+                                             "Saved" if path.progress is not None else "Not started"))
         for button in self._cantina_buttons:
             button.configure(state="normal" if self._cantina_paths else "disabled")
 
@@ -1216,24 +1222,45 @@ class EditorApp(tk.Tk):
                                         minvalue=0, maxvalue=10 if by_tier else 2147483647, parent=self)
         if value is None:
             return
-        if by_tier:
-            path.set_tier(value)
-        else:
-            path.set_points(value)
+        try:
+            if by_tier:
+                path.set_tier(value)
+            else:
+                path.set_points(value)
+        except ValueError as exc:
+            return messagebox.showerror("Cantina edit not applied", str(exc), parent=self)
         self._refresh_cantina()
-        self.cantina_tree.selection_set(str(idx))
+        selected = next(i for i, current in enumerate(self._cantina_paths) if current.asset == path.asset)
+        self.cantina_tree.selection_set(str(selected))
         self.status.set(f"{path.label}: {path.points} points, tier {path.tier}. Save As a test copy.")
 
     def _max_cantina(self):
         if not self._cantina_paths:
             return
         if not messagebox.askyesno("Experimental Cantina edit",
-                "Set all existing built-in paths to maximum tier points?\n"
+                "Max all five built-in paths and unlock their mech upgrades?\n"
+                "Missing path records will be created. Existing upgrades and mod paths are kept.\n"
                 "Jobs and reward-claim records stay unchanged. Test with Save As on a copy.", parent=self):
             return
-        count = cantina.max_paths(self._cantina_paths)
+        try:
+            count = cantina.max_paths(self._cantina_paths)
+        except ValueError as exc:
+            return messagebox.showerror("Cantina edit not applied", str(exc), parent=self)
         self._refresh_cantina()
-        self.status.set(f"Set {count} existing Cantina paths to max points. Save As a test copy.")
+        self.status.set(f"Maxed {count} Cantina paths and synced upgrade unlocks. Save As a test copy.")
+
+    def _sync_cantina_unlocks(self):
+        if not self._cantina_paths:
+            return
+        if not messagebox.askyesno("Sync Cantina upgrades",
+                "Add missing built-in mech-upgrade unlocks for the current path points?\n"
+                "Points and existing upgrades are kept. Test with Save As on a copy.", parent=self):
+            return
+        try:
+            count = cantina.sync_unlocks(self.save)
+        except ValueError as exc:
+            return messagebox.showerror("Cantina edit not applied", str(exc), parent=self)
+        self.status.set(f"Added {count} missing Cantina upgrade unlocks. Save As a test copy.")
 
     def _build_item_catalog(self):
         """Merge the built-in item lists with everything the loaded save
