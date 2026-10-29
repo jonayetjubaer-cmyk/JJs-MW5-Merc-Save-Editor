@@ -99,7 +99,8 @@ jobs:
           foreach ($language in @('en', 'fr', 'de', 'ru', 'ja', 'es-419')) {
             $path = "build_out/JJsaveEditor/locales/$language.json"
             if (-not (Test-Path -LiteralPath $path)) { throw "Missing language: $language" }
-            Get-Content -LiteralPath $path -Raw -Encoding utf8 | ConvertFrom-Json | Out-Null
+            # Translation keys are case-sensitive (e.g. Active Bay / Active bay).
+            Get-Content -LiteralPath $path -Raw -Encoding utf8 | ConvertFrom-Json -AsHashtable | Out-Null
           }
 
       # --- Code signing (SignPath Foundation). Skipped until SIGNPATH_PROJECT_SLUG
