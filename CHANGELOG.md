@@ -1,5 +1,32 @@
 # Changelog
 
+## v1.20.0
+- **Publisher metadata:** Windows file properties now identify **Jonaex LTD**
+  as the company and copyright holder. The editor's product name is unchanged.
+- **Choose the editor language.** English, French, German, Russian, Japanese,
+  and Latin American Spanish match MW5's supported interface languages.
+  The new **Language (restart)** selector remembers the choice. Save your
+  changes and restart to apply it; changing the selection never rebuilds forms
+  or discards pending edits. First launch follows the supported Windows display
+  language, falling back to English.
+- **Translated interface.** Tabs, buttons, filters, editing dialogs, loadout
+  location labels, confirmations and status messages have translation catalogs.
+  Asset names/IDs, existing pilot biographies and technical diagnostic details
+  retain their original text. These are initial AI-assisted translations;
+  native-speaker corrections are welcome.
+- **Save operations retain their original identifiers.** Translated choices for
+  inventory categories, pilot filters, sorting and empty loadout slots map back
+  to the same internal values. No save-format or catalog-format changes.
+- **Translations are bundled with the Windows download.** Missing or invalid
+  translation entries fall back to English. The larger default window and
+  wrapped inventory hint accommodate translated text.
+- 122 regression tests pass, including catalog coverage and placeholder
+  validation for all six languages, canonical filter/sort/empty-slot values,
+  preference persistence and preservation of pending edits. The compiled Windows
+  build was opened with bundled Japanese translations; Russian pilot, inventory
+  and faction layouts were visually checked. Translation wording still benefits
+  from native-speaker review.
+
 ## v1.19.1
 - **Cantina paths can be edited before earning points (issue #43).** All five
   built-in paths now appear, including not-started paths at zero. Reading a save

@@ -41,6 +41,9 @@ jobs:
       - name: Install build dependencies
         run: pip install nuitka
 
+      - name: Run regression tests
+        run: python -m unittest discover -s editor -p "test_*.py"
+
       - name: Work out version + zip name
         id: ver
         shell: pwsh
@@ -70,19 +73,34 @@ jobs:
             --include-data-files=editor/trait_catalog.json.gz=trait_catalog.json.gz `
             --include-data-files=editor/pilot_catalog.json.gz=pilot_catalog.json.gz `
             --include-data-files=editor/stock_templates.json.gz=stock_templates.json.gz `
-            --company-name="JJ (jonayetjubaer-cmyk)" `
+            --include-data-dir=editor/locales=locales `
+            --company-name="Jonaex LTD" `
             --product-name="JJ's MW5 Merc Save Editor" `
             --file-version=${{ steps.ver.outputs.filever }} `
             --product-version=${{ steps.ver.outputs.filever }} `
             --file-description="JJ's MechWarrior 5 Mercenaries Save Editor" `
-            --copyright="(c) 2026 JJ (jonayetjubaer-cmyk). MIT License." `
+            --copyright="(c) 2026 Jonaex LTD. MIT License." `
             --assume-yes-for-downloads `
             --output-dir=build_out --output-filename=JJsaveEditor.exe `
             editor/gui.py
 
       - name: Name the build folder
         shell: pwsh
-        run: Rename-Item build_out/gui.dist JJsaveEditor
+        run: |
+          Rename-Item build_out/gui.dist JJsaveEditor
+          Copy-Item LICENSE build_out/JJsaveEditor/LICENSE.txt
+
+      - name: Verify company metadata and bundled languages
+        shell: pwsh
+        run: |
+          $info = (Get-Item build_out/JJsaveEditor/JJsaveEditor.exe).VersionInfo
+          if ($info.CompanyName -ne 'Jonaex LTD') { throw 'Incorrect company metadata' }
+          if ($info.LegalCopyright -notmatch 'Jonaex LTD') { throw 'Incorrect copyright metadata' }
+          foreach ($language in @('en', 'fr', 'de', 'ru', 'ja', 'es-419')) {
+            $path = "build_out/JJsaveEditor/locales/$language.json"
+            if (-not (Test-Path -LiteralPath $path)) { throw "Missing language: $language" }
+            Get-Content -LiteralPath $path -Raw -Encoding utf8 | ConvertFrom-Json | Out-Null
+          }
 
       # --- Code signing (SignPath Foundation). Skipped until SIGNPATH_PROJECT_SLUG
       #     is set, so unsigned builds keep working unchanged in the meantime. ---

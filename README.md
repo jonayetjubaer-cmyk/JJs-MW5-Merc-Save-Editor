@@ -11,6 +11,8 @@
 
 ---
 
+Maintained and published by **Jonaex LTD**.
+
 ## Download
 
 **[Download the latest version from the Releases page](../../releases/latest)**
@@ -68,6 +70,24 @@ nothing else needed.
    field edits before saving. The editor retains the new order after reloading;
    the game's deployment-screen order still needs confirmation.
 5. Click **Save**, then load the save in-game.
+
+---
+
+## Languages
+
+The editor interface supports the same six languages listed for MW5:
+**English, French, German, Russian, Japanese, and Latin American Spanish**.
+Choose your language in **Language (restart)**, save any pending edits, then
+restart the editor. Your choice is remembered. On first launch, the editor uses
+your Windows display language when supported, otherwise English.
+
+Buttons, tabs, filters, editing dialogs and status messages are translated.
+Asset names/IDs, pilot biographies from your save, and technical error details
+remain as supplied by the game, catalogs or tools. Language selection changes
+only the editor interface; it does not change the game's language or save format.
+
+Translations are an initial, AI-assisted pass; native-speaker corrections are
+welcome. See [the translation notes](editor/locales/README.md) to contribute.
 
 ---
 

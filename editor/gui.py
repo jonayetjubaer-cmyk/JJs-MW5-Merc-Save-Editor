@@ -19,6 +19,9 @@ import urllib.request
 import webbrowser
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, simpledialog
+import i18n
+from i18n import tr as _
+from localized_widgets import LocalizedCombobox, LocalizedDialog
 
 # Resolve the catalog source (built-in vs an external Scarab folder) BEFORE any
 # catalog module is imported -- see catalog_source and issue #18.
@@ -227,6 +230,12 @@ def weapon_slot_location_label(slot_id: str) -> str:
     return label
 
 
+def localized_slot_label(slot_id: str) -> str:
+    location, region = weapon_slot_placement(slot_id)
+    label = _(LOCATION_LABEL.get(location, location))
+    return f"{label} · {_(region)}" if region and location in ARM_PANEL_LOCATIONS else label
+
+
 def _fit_combobox_dropdown(combo: ttk.Combobox, max_chars: int = 60):
     """Widen a ttk combobox's popup so long asset names remain readable."""
     try:
@@ -243,12 +252,14 @@ def _fit_combobox_dropdown(combo: ttk.Combobox, max_chars: int = 60):
 
 def _readable_combobox(parent, *, width: int, **kwargs) -> ttk.Combobox:
     """Combobox with a compact field and a popup sized for its longest value."""
-    combo = ttk.Combobox(parent, width=width, **kwargs)
+    combo = LocalizedCombobox(parent, width=width,
+                             labeler=lambda value: _("(empty)") if value == "(empty)" else value,
+                             **kwargs)
     combo.configure(postcommand=lambda c=combo: _fit_combobox_dropdown(c))
     return combo
 
 
-APP_VERSION = "1.19.1"
+APP_VERSION = "1.20.0"
 
 # update check (GitHub is the source of truth; Nexus may lag a release behind)
 GITHUB_REPO = "jonayetjubaer-cmyk/JJs-MW5-Merc-Save-Editor"
@@ -292,9 +303,10 @@ DEFAULT_SAVE_DIR = os.path.expandvars(
 class EditorApp(tk.Tk):
     def __init__(self):
         super().__init__()
+        i18n.set_language(load_pref("language") or i18n.system_language())
         self.title(f"JJ's MW5 Merc Save Editor  v{APP_VERSION}")
-        self.geometry("860x680")
-        self.minsize(720, 520)
+        self.geometry("1040x740")
+        self.minsize(820, 600)
         self._set_app_icon()
         self.save: SaveFile | None = None
         self.path: str | None = None
@@ -320,18 +332,18 @@ class EditorApp(tk.Tk):
         self.inv_tab = ttk.Frame(self.nb)
         self.faction_tab = ttk.Frame(self.nb)
         self.cantina_tab = ttk.Frame(self.nb)
-        self.nb.add(self.mech_tab, text="Mechs")
-        self.nb.add(self.pilot_tab, text="Pilots")
-        self.nb.add(self.inv_tab, text="Inventory")
-        self.nb.add(self.faction_tab, text="Factions")
-        self.nb.add(self.cantina_tab, text="Cantina (experimental)")
+        self.nb.add(self.mech_tab, text=_('Mechs'))
+        self.nb.add(self.pilot_tab, text=_('Pilots'))
+        self.nb.add(self.inv_tab, text=_('Inventory'))
+        self.nb.add(self.faction_tab, text=_('Factions'))
+        self.nb.add(self.cantina_tab, text=_('Cantina (experimental)'))
         self._build_mech_tab()
         self._build_pilot_tab()
         self._build_inventory_tab()
         self._build_faction_tab()
         self._build_cantina_tab()
 
-        self.status = tk.StringVar(value="Open a .sav file to begin.")
+        self.status = tk.StringVar(value=_("Open a .sav file to begin."))
         ttk.Label(self, textvariable=self.status, relief="sunken",
                   style="Status.TLabel", anchor="w").pack(fill="x", side="bottom")
         # re-apply now that themed widgets (canvas, cards) exist
@@ -371,8 +383,8 @@ class EditorApp(tk.Tk):
                 log.write(f"\nEditor v{APP_VERSION}\n")
                 traceback.print_exception(exc, value, tb, file=log)
         except OSError:
-            path = "Error log could not be written."
-        messagebox.showerror("Editor error", f"{exc.__name__}: {value}\n\n{path}", parent=self)
+            path = _("Error log could not be written.")
+        messagebox.showerror(_('Editor error'), f"{exc.__name__}: {value}\n\n{path}", parent=self)
 
     def _set_app_icon(self):
         """Set the window / taskbar icon from the bundled app_icon.ico."""
@@ -457,26 +469,44 @@ class EditorApp(tk.Tk):
     def _build_toolbar(self):
         bar = ttk.Frame(self)
         bar.pack(fill="x", padx=8, pady=8)
-        ttk.Button(bar, text="Open…", command=self.on_open).pack(side="left")
-        ttk.Button(bar, text="Save", command=self.on_save).pack(side="left", padx=4)
-        ttk.Button(bar, text="Save As…", command=self.on_save_as).pack(side="left")
+        ttk.Button(bar, text=_('Open…'), command=self.on_open).pack(side="left")
+        ttk.Button(bar, text=_('Save'), command=self.on_save).pack(side="left", padx=4)
+        ttk.Button(bar, text=_('Save As…'), command=self.on_save_as).pack(side="left")
         ttk.Separator(bar, orient="vertical").pack(side="left", fill="y", padx=8)
-        ttk.Button(bar, text="Export…", command=self.on_export).pack(side="left")
-        ttk.Button(bar, text="Import…", command=self.on_import).pack(side="left", padx=4)
+        ttk.Button(bar, text=_('Export…'), command=self.on_export).pack(side="left")
+        ttk.Button(bar, text=_('Import…'), command=self.on_import).pack(side="left", padx=4)
         ttk.Separator(bar, orient="vertical").pack(side="left", fill="y", padx=8)
-        ttk.Button(bar, text="Check for Updates",
+        ttk.Button(bar, text=_('Check for Updates'),
                    command=lambda: self._check_updates_async(manual=True)).pack(side="left")
 
-        ttk.Button(bar, text="Catalogs...", command=self.on_catalog_source).pack(side="right", padx=(8, 0))
+        options = ttk.Frame(self)
+        options.pack(fill="x", padx=8, pady=(0, 8))
+        ttk.Label(options, text=_("Language (restart):")).pack(side="left", padx=(0, 4))
+        self.language_var = tk.StringVar(value=i18n.LANGUAGES[i18n.get_language()])
+        self.language_combo = ttk.Combobox(options, width=25, state="readonly",
+                                          textvariable=self.language_var,
+                                          values=tuple(i18n.LANGUAGES.values()))
+        self.language_combo.pack(side="left")
+        self.language_combo.bind("<<ComboboxSelected>>", self._on_language_change)
 
-        # theme selector (right side): System follows the Windows app theme
-        ttk.Label(bar, text="Theme:").pack(side="right", padx=(0, 4))
-        theme_cb = ttk.Combobox(bar, width=8, state="readonly",
+        ttk.Button(options, text=_('Catalogs...'), command=self.on_catalog_source).pack(side="right")
+        theme_cb = LocalizedCombobox(options, width=12, state="readonly",
                                 textvariable=self._theme_pref,
-                                values=("System", "Light", "Dark"))
+                                values=("System", "Light", "Dark"),
+                                labeler=lambda value: _("Light theme") if value == "Light" else _(value))
         theme_cb.set(self._theme_pref.get().capitalize())
-        theme_cb.pack(side="right")
+        theme_cb.pack(side="right", padx=(0, 8))
         theme_cb.bind("<<ComboboxSelected>>", self._on_theme_change)
+        ttk.Label(options, text=_('Theme:')).pack(side="right", padx=(8, 4))
+
+    def _on_language_change(self, _evt=None):
+        code = next((key for key, label in i18n.LANGUAGES.items()
+                     if label == self.language_var.get()), None)
+        if code is not None:
+            save_pref("language", code)
+            # Do not rebuild forms or close the app: pending edits must survive.
+            self.status.set(i18n.translate_for(code,
+                "Language saved. Restart the editor to apply it. Save your changes first."))
 
     # -- catalog source ----------------------------------------------------
     def on_catalog_source(self):
@@ -486,7 +516,7 @@ class EditorApp(tk.Tk):
         trusted = catalog_source.builtin_dir()
 
         dlg = tk.Toplevel(self)
-        dlg.title("Catalogs and Mods")
+        dlg.title(_('Catalogs and Mods'))
         dlg.transient(self)
         dlg.resizable(False, False)
         frm = ttk.Frame(dlg)
@@ -499,53 +529,49 @@ class EditorApp(tk.Tk):
         report_var = tk.BooleanVar(value=bool(load_pref("scarab_build_report", False)))
         status_var = tk.StringVar(value="")
 
-        src = "External Scarab folder" if active else "Built-in catalogs"
-        ttk.Label(frm, text=f"In use now: {src}", font=("", 10, "bold")).grid(
+        src = _("External Scarab folder") if active else _("Built-in catalogs")
+        ttk.Label(frm, text=_('In use now: {p0}', p0=src), font=("", 10, "bold")).grid(
             row=0, column=0, columnspan=3, sticky="w")
-        detail = active or configured or "No external catalog folder configured."
+        detail = active or configured or _("No external catalog folder configured.")
         ttk.Label(frm, text=detail, style="Muted.TLabel", wraplength=560).grid(
             row=1, column=0, columnspan=3, sticky="w", pady=(2, 8))
         ttk.Label(
             frm,
-            text=("Scarab support is experimental. Use Scarab "
-                  f"{scarab_integration.MINIMUM_SCARAB} or newer to generate "
-                  "item_catalog.json.gz, mech_catalog.json.gz, "
-                  "trait_catalog.json.gz, and stock_templates.json.gz from "
-                  "your MW5 install and enabled mods."),
+            text=(_('Scarab support is experimental. Use Scarab {p0} or newer to generate item_catalog.json.gz, mech_catalog.json.gz, trait_catalog.json.gz, and stock_templates.json.gz from your MW5 install and enabled mods.', p0=scarab_integration.MINIMUM_SCARAB)),
             style="Muted.TLabel",
             wraplength=560,
             justify="left",
         ).grid(row=2, column=0, columnspan=3, sticky="w", pady=(0, 10))
 
         def add_row(row, label, var, command, button_text="Browse..."):
-            ttk.Label(frm, text=label).grid(row=row, column=0, sticky="w", pady=3)
+            ttk.Label(frm, text=_(label)).grid(row=row, column=0, sticky="w", pady=3)
             ttk.Entry(frm, textvariable=var, width=62).grid(
                 row=row, column=1, sticky="ew", padx=(8, 6), pady=3)
-            ttk.Button(frm, text=button_text, command=command).grid(
+            ttk.Button(frm, text=_(button_text), command=command).grid(
                 row=row, column=2, sticky="ew", pady=3)
 
         def choose_scarab():
             p = filedialog.askopenfilename(
-                title="Select scarab.exe",
+                title=_('Select scarab.exe'),
                 parent=dlg,
-                filetypes=[("Scarab executable", "scarab.exe"), ("Executable", "*.exe"), ("All files", "*.*")],
+                filetypes=[(_('Scarab executable'), "scarab.exe"), (_('Executable'), "*.exe"), (_('All files'), "*.*")],
             )
             if p:
                 scarab_var.set(p)
 
         def choose_mw5():
-            d = filedialog.askdirectory(title="Select MW5 game folder", parent=dlg)
+            d = filedialog.askdirectory(title=_('Select MW5 game folder'), parent=dlg)
             if d:
                 mw5_var.set(d)
 
         add_row(3, "Scarab exe", scarab_var, choose_scarab)
         add_row(4, "MW5 game folder", mw5_var, choose_mw5)
-        ttk.Label(frm, text="Output folder").grid(row=5, column=0, sticky="w", pady=3)
+        ttk.Label(frm, text=_('Output folder')).grid(row=5, column=0, sticky="w", pady=3)
         ttk.Entry(frm, textvariable=output_var, width=62).grid(
             row=5, column=1, sticky="ew", padx=(8, 6), pady=3)
-        ttk.Label(frm, text="relative to scarab.exe", style="Muted.TLabel").grid(
+        ttk.Label(frm, text=_('relative to scarab.exe'), style="Muted.TLabel").grid(
             row=5, column=2, sticky="w", pady=3)
-        ttk.Checkbutton(frm, text="Write catalog_build_report.json", variable=report_var).grid(
+        ttk.Checkbutton(frm, text=_('Write catalog_build_report.json'), variable=report_var).grid(
             row=6, column=1, sticky="w", padx=(8, 0), pady=(2, 8))
 
         ttk.Separator(frm).grid(row=7, column=0, columnspan=3, sticky="ew", pady=(4, 10))
@@ -557,27 +583,24 @@ class EditorApp(tk.Tk):
             save_pref("scarab_build_report", bool(report_var.get()))
 
         def choose_existing():
-            d = filedialog.askdirectory(title="Select a Scarab catalog folder", parent=dlg)
+            d = filedialog.askdirectory(title=_('Select a Scarab catalog folder'), parent=dlg)
             if not d:
                 return
             if not catalog_source.is_valid(d):
                 return messagebox.showwarning(
-                    "Not a catalog folder",
-                    "That folder doesn't contain a complete catalog set "
-                    "(item_catalog.json.gz, mech_catalog.json.gz, "
-                    "trait_catalog.json.gz, stock_templates.json.gz). "
-                    "Plain .json catalogs are also accepted.",
+                    _('Not a catalog folder'),
+                    _("That folder doesn't contain a complete catalog set (item_catalog.json.gz, mech_catalog.json.gz, trait_catalog.json.gz, stock_templates.json.gz). Plain .json catalogs are also accepted."),
                     parent=dlg)
             catalog_source.set_dir(d)
-            messagebox.showinfo("Catalog folder set",
-                                "Saved. Restart the editor to load these catalogs.",
+            messagebox.showinfo(_('Catalog folder set'),
+                                _('Saved. Restart the editor to load these catalogs.'),
                                 parent=dlg)
             dlg.destroy()
 
         def reset():
             catalog_source.set_dir(None)
-            messagebox.showinfo("Reverted to built-in",
-                                "Restart the editor to apply.", parent=dlg)
+            messagebox.showinfo(_('Reverted to built-in'),
+                                _('Restart the editor to apply.'), parent=dlg)
             dlg.destroy()
 
         def open_output():
@@ -588,7 +611,7 @@ class EditorApp(tk.Tk):
             if p and os.path.isdir(p):
                 os.startfile(p)
             else:
-                messagebox.showinfo("Output folder", "The output folder does not exist yet.", parent=dlg)
+                messagebox.showinfo(_('Output folder'), _('The output folder does not exist yet.'), parent=dlg)
 
         def finish_generate(result):
             generate_btn.configure(state="normal")
@@ -596,24 +619,24 @@ class EditorApp(tk.Tk):
             status_var.set(result.message)
             self.status.set(result.message)
             if not result.ok:
-                return messagebox.showerror("Scarab failed", result.message, parent=dlg)
+                return messagebox.showerror(_('Scarab failed'), result.message, parent=dlg)
             catalog_source.set_dir(result.output_dir)
             messagebox.showinfo(
-                "Catalog generated",
-                f"{result.message}\n\nSaved for next launch:\n{result.output_dir}",
+                _('Catalog generated'),
+                _('{p0}\n\nSaved for next launch:\n{p1}', p0=result.message, p1=result.output_dir),
                 parent=dlg)
 
         def generate():
             save_settings()
             if not trusted:
                 return messagebox.showerror(
-                    "Built-in catalogs missing",
-                    "The editor could not find its bundled trusted catalog files.",
+                    _('Built-in catalogs missing'),
+                    _('The editor could not find its bundled trusted catalog files.'),
                     parent=dlg)
             generate_btn.configure(state="disabled")
             close_btn.configure(state="disabled")
-            status_var.set("Running Scarab...")
-            self.status.set("Running Scarab catalog generation...")
+            status_var.set(_('Running Scarab...'))
+            self.status.set(_('Running Scarab catalog generation...'))
 
             def worker():
                 result = scarab_integration.run_scarab(
@@ -629,12 +652,12 @@ class EditorApp(tk.Tk):
 
         btns = ttk.Frame(frm)
         btns.grid(row=8, column=0, columnspan=3, sticky="ew")
-        generate_btn = ttk.Button(btns, text="Generate with Scarab", command=generate)
+        generate_btn = ttk.Button(btns, text=_('Generate with Scarab'), command=generate)
         generate_btn.pack(side="left")
-        ttk.Button(btns, text="Choose Existing...", command=choose_existing).pack(side="left", padx=6)
-        ttk.Button(btns, text="Open Output", command=open_output).pack(side="left")
-        ttk.Button(btns, text="Reset to Built-in", command=reset).pack(side="left", padx=6)
-        close_btn = ttk.Button(btns, text="Close", command=dlg.destroy)
+        ttk.Button(btns, text=_('Choose Existing...'), command=choose_existing).pack(side="left", padx=6)
+        ttk.Button(btns, text=_('Open Output'), command=open_output).pack(side="left")
+        ttk.Button(btns, text=_('Reset to Built-in'), command=reset).pack(side="left", padx=6)
+        close_btn = ttk.Button(btns, text=_('Close'), command=dlg.destroy)
         close_btn.pack(side="right")
 
         ttk.Label(frm, textvariable=status_var, style="Muted.TLabel", wraplength=560).grid(
@@ -666,7 +689,7 @@ class EditorApp(tk.Tk):
             return
         self._update_checking = True
         if manual:
-            self.status.set("Checking for updates…")
+            self.status.set(_('Checking for updates…'))
 
         def worker():
             tag = fetch_latest_version()
@@ -679,21 +702,20 @@ class EditorApp(tk.Tk):
         if not tag:
             if manual:
                 messagebox.showwarning(
-                    "Check for Updates",
-                    "Couldn't reach GitHub to check for updates.\n"
-                    "Check your connection, or visit the Releases page directly.")
+                    _('Check for Updates'),
+                    _("Couldn't reach GitHub to check for updates.\nCheck your connection, or visit the Releases page directly."))
             return
         if _version_tuple(tag) > _version_tuple(APP_VERSION):
             self._update_msg.configure(
-                text=f"A new version ({tag}) is available — you have v{APP_VERSION}.")
+                text=_('A new version ({p0}) is available — you have v{p1}.', p0=tag, p1=APP_VERSION))
             self._update_bar.pack(fill="x", before=self.nb)
-            self.status.set(f"Update available: {tag}. You're on v{APP_VERSION}.")
+            self.status.set(_("Update available: {p0}. You're on v{p1}.", p0=tag, p1=APP_VERSION))
         else:
-            self.status.set(f"You're up to date (v{APP_VERSION}).")
+            self.status.set(_("You're up to date (v{p0}).", p0=APP_VERSION))
             if manual:
                 messagebox.showinfo(
-                    "Check for Updates",
-                    f"You're running the latest version (v{APP_VERSION}).")
+                    _('Check for Updates'),
+                    _("You're running the latest version (v{p0}).", p0=APP_VERSION))
 
     # -- mech tab ----------------------------------------------------------
     def _build_mech_tab(self):
@@ -706,15 +728,15 @@ class EditorApp(tk.Tk):
         # filter: show all mechs, only the active bay, or only cold storage
         flt = ttk.Frame(mwrap)
         flt.pack(anchor="w", pady=(0, 2))
-        ttk.Label(flt, text="Show:").pack(side="left")
+        ttk.Label(flt, text=_('Show:')).pack(side="left")
         self.mech_filter = tk.StringVar(value="all")
         for txt, val in (("All", "all"), ("Active Bay", "active"), ("Cold Storage", "cold")):
-            ttk.Radiobutton(flt, text=txt, value=val, variable=self.mech_filter,
+            ttk.Radiobutton(flt, text=_(txt), value=val, variable=self.mech_filter,
                             command=self._refresh_mechs).pack(side="left", padx=2)
-        ttk.Label(flt, text="Sort:").pack(side="left", padx=(8, 2))
+        ttk.Label(flt, text=_('Sort:')).pack(side="left", padx=(8, 2))
         self.mech_sort_var = tk.StringVar(value="Save order")
-        sort = ttk.Combobox(flt, textvariable=self.mech_sort_var, state="readonly",
-                            values=("Save order", "A–Z", "Z–A"), width=12)
+        sort = LocalizedCombobox(flt, textvariable=self.mech_sort_var, state="readonly",
+                            values=("Save order", "A–Z", "Z–A"), width=20)
         sort.pack(side="left")
         sort.bind("<<ComboboxSelected>>", lambda e: self._refresh_mechs() if self.save else None)
 
@@ -739,16 +761,16 @@ class EditorApp(tk.Tk):
 
         side = ttk.Frame(self.mech_tab)
         side.pack(side="left", fill="y", pady=4)
-        ttk.Button(side, text="Add Mech…", command=self.on_add_mech).pack(fill="x", pady=2)
-        ttk.Button(side, text="Edit Loadout…", command=self.on_edit_loadout).pack(fill="x", pady=2)
-        ttk.Button(side, text="Set Hardpoints…", command=self.on_set_hardpoints).pack(fill="x", pady=2)
-        ttk.Button(side, text="Change Chassis…", command=self.on_change_chassis).pack(fill="x", pady=2)
-        ttk.Button(side, text="Repair (full armor)", command=self.on_repair).pack(fill="x", pady=2)
-        ttk.Button(side, text="Repair ALL Mechs", command=self.on_repair_all).pack(fill="x", pady=2)
-        ttk.Button(side, text="Reset to Stock", command=self.on_reset_to_stock).pack(fill="x", pady=2)
-        ttk.Button(side, text="Export Loadout…", command=self.on_export_loadout).pack(fill="x", pady=2)
-        ttk.Button(side, text="Import Loadout…", command=self.on_import_loadout).pack(fill="x", pady=2)
-        ttk.Button(side, text="Remove", command=self.on_remove_mech).pack(fill="x", pady=2)
+        ttk.Button(side, text=_('Add Mech…'), command=self.on_add_mech).pack(fill="x", pady=2)
+        ttk.Button(side, text=_('Edit Loadout…'), command=self.on_edit_loadout).pack(fill="x", pady=2)
+        ttk.Button(side, text=_('Set Hardpoints…'), command=self.on_set_hardpoints).pack(fill="x", pady=2)
+        ttk.Button(side, text=_('Change Chassis…'), command=self.on_change_chassis).pack(fill="x", pady=2)
+        ttk.Button(side, text=_('Repair (full armor)'), command=self.on_repair).pack(fill="x", pady=2)
+        ttk.Button(side, text=_('Repair ALL Mechs'), command=self.on_repair_all).pack(fill="x", pady=2)
+        ttk.Button(side, text=_('Reset to Stock'), command=self.on_reset_to_stock).pack(fill="x", pady=2)
+        ttk.Button(side, text=_('Export Loadout…'), command=self.on_export_loadout).pack(fill="x", pady=2)
+        ttk.Button(side, text=_('Import Loadout…'), command=self.on_import_loadout).pack(fill="x", pady=2)
+        ttk.Button(side, text=_('Remove'), command=self.on_remove_mech).pack(fill="x", pady=2)
 
     # -- mech-bay cards ----------------------------------------------------
     def _bind_mech_wheel(self, on):
@@ -790,14 +812,14 @@ class EditorApp(tk.Tk):
 
         badge_bg, badge_fg = THEME["class_badge"].get(
             cls, (THEME["badge_bg"], THEME["badge_fg"]))
-        tk.Label(card, text=(cls or "?").upper(), bg=badge_bg, fg=badge_fg,
+        tk.Label(card, text=_(cls or "?").upper(), bg=badge_bg, fg=badge_fg,
                  font=("", 8, "bold"), padx=6, pady=2).pack(side="right", padx=8)
 
         mid = tk.Frame(card, bg=bg)
         mid.pack(side="left", fill="x", expand=True, pady=6)
         tk.Label(mid, text=mech_display(m.chassis), bg=bg, anchor="w", fg=THEME["text"],
                  justify="left", font=("", 10, "bold")).pack(fill="x")
-        tk.Label(mid, text=f"{tons or '?'}t · {location}", bg=bg, fg=THEME["text_muted"],
+        tk.Label(mid, text=_('{p0}t · {p1}', p0=tons or '?', p1=_(location)), bg=bg, fg=THEME["text_muted"],
                  anchor="w", font=("", 8)).pack(fill="x")
         # stock structure/armor type, shown only when it's not plain Standard
         # (Endo-Steel / Ferro-Fibrous chassis -- issue #12 data from FiendishDrWu)
@@ -835,18 +857,18 @@ class EditorApp(tk.Tk):
         self.pilot_list.bind("<<ListboxSelect>>", self._on_pilot_select)
         pbtns = ttk.Frame(left)
         pbtns.pack(fill="x", pady=4)
-        ttk.Label(pbtns, text="Saved roster order", font=("", 9, "bold")).pack(anchor="w")
+        ttk.Label(pbtns, text=_('Saved roster order'), font=("", 9, "bold")).pack(anchor="w")
         for choices in ((("Move Up", -1), ("Move Down", 1)),
                         (("Move to Top", "top"), ("Move to Bottom", "bottom"))):
             row = ttk.Frame(pbtns)
             row.pack(fill="x", pady=1)
             for label, offset in choices:
-                ttk.Button(row, text=label, command=lambda value=offset: self.on_move_pilot(value)
+                ttk.Button(row, text=_(label), command=lambda value=offset: self.on_move_pilot(value)
                            ).pack(side="left", fill="x", expand=True)
-        ttk.Label(pbtns, text="Player slots stay fixed.\nSave to keep the new order.",
+        ttk.Label(pbtns, text=_('Player slots stay fixed.\nSave to keep the new order.'),
                   style="Muted.TLabel").pack(anchor="w", pady=(0, 4))
-        ttk.Button(pbtns, text="Add Pilot…", command=self.on_add_pilot).pack(fill="x", pady=1)
-        ttk.Button(pbtns, text="Remove Pilot", command=self.on_remove_pilot).pack(fill="x", pady=1)
+        ttk.Button(pbtns, text=_('Add Pilot…'), command=self.on_add_pilot).pack(fill="x", pady=1)
+        ttk.Button(pbtns, text=_('Remove Pilot'), command=self.on_remove_pilot).pack(fill="x", pady=1)
 
         wrap = ttk.Frame(self.pilot_tab)
         wrap.pack(side="left", fill="both", expand=True, pady=4)
@@ -870,22 +892,22 @@ class EditorApp(tk.Tk):
         self.pilot_vars: dict[str, tk.StringVar] = {}
 
         def row(label, key, r):
-            ttk.Label(form, text=label).grid(row=r, column=0, sticky="w", pady=2)
+            ttk.Label(form, text=_(label)).grid(row=r, column=0, sticky="w", pady=2)
             var = tk.StringVar()
             ttk.Entry(form, textvariable=var, width=24).grid(row=r, column=1, columnspan=2,
                                                              sticky="w", pady=2)
             self.pilot_vars[key] = var
 
-        row("Callsign", "callsign", 0)
-        row("Full name", "full_name", 1)
-        row("Salary (C-Bills)", "salary", 2)
+        row(_('Callsign'), "callsign", 0)
+        row(_('Full name'), "full_name", 1)
+        row(_('Salary (C-Bills)'), "salary", 2)
         ttk.Separator(form, orient="horizontal").grid(row=3, column=0, columnspan=3, sticky="ew", pady=6)
-        ttk.Label(form, text="Skill", font=("", 9, "bold")).grid(row=4, column=0, sticky="w")
-        ttk.Label(form, text="XP", font=("", 9, "bold")).grid(row=4, column=1, sticky="w")
-        ttk.Label(form, text="Cap (max 10)", font=("", 9, "bold")).grid(row=4, column=2, sticky="w")
+        ttk.Label(form, text=_('Skill'), font=("", 9, "bold")).grid(row=4, column=0, sticky="w")
+        ttk.Label(form, text=_('XP'), font=("", 9, "bold")).grid(row=4, column=1, sticky="w")
+        ttk.Label(form, text=_('Cap (max 10)'), font=("", 9, "bold")).grid(row=4, column=2, sticky="w")
         for i, sk in enumerate(SKILLS):
             r = 5 + i
-            ttk.Label(form, text=sk).grid(row=r, column=0, sticky="w", pady=1)
+            ttk.Label(form, text=_(sk)).grid(row=r, column=0, sticky="w", pady=1)
             xpv = tk.StringVar()
             ttk.Entry(form, textvariable=xpv, width=12).grid(row=r, column=1, sticky="w", pady=1)
             self.pilot_vars[f"skill_{sk}"] = xpv
@@ -897,15 +919,15 @@ class EditorApp(tk.Tk):
             self.pilot_vars[f"cap_{sk}"] = capv
 
         br = 5 + len(SKILLS)
-        ttk.Button(form, text="Apply to Pilot", command=self.on_apply_pilot).grid(
+        ttk.Button(form, text=_('Apply to Pilot'), command=self.on_apply_pilot).grid(
             row=br, column=0, columnspan=2, sticky="w", pady=8)
-        ttk.Button(form, text="Max caps (10)", command=self.on_max_caps).grid(
+        ttk.Button(form, text=_('Max caps (10)'), command=self.on_max_caps).grid(
             row=br, column=2, sticky="w", pady=8)
 
         # -- traits (apply immediately; no "Apply to Pilot" needed) --
         tr = br + 1
         ttk.Separator(form, orient="horizontal").grid(row=tr, column=0, columnspan=3, sticky="ew", pady=6)
-        ttk.Label(form, text="Traits", font=("", 9, "bold")).grid(row=tr + 1, column=0, sticky="w")
+        ttk.Label(form, text=_('Traits'), font=("", 9, "bold")).grid(row=tr + 1, column=0, sticky="w")
         tlf = ttk.Frame(form)
         tlf.grid(row=tr + 2, column=0, columnspan=3, sticky="w")
         self.pilot_trait_list = tk.Listbox(tlf, height=4, width=38, exportselection=False)
@@ -918,61 +940,61 @@ class EditorApp(tk.Tk):
         self.pilot_trait_var = tk.StringVar()
         self.pilot_trait_cb = SearchablePicker(
             taf, textvariable=self.pilot_trait_var, width=44,
-            title="Choose pilot trait",
+            title=_('Choose pilot trait'),
         )
         self.pilot_trait_cb.pack(side="left")
-        ttk.Button(taf, text="Add", command=self.on_add_pilot_trait).pack(side="left", padx=4)
-        ttk.Button(taf, text="Remove", command=self.on_remove_pilot_trait).pack(side="left")
+        ttk.Button(taf, text=_('Add'), command=self.on_add_pilot_trait).pack(side="left", padx=4)
+        ttk.Button(taf, text=_('Remove'), command=self.on_remove_pilot_trait).pack(side="left")
 
         # -- appearance (each button applies immediately, like the trait Add button) --
         ar = tr + 4
         ttk.Separator(form, orient="horizontal").grid(row=ar, column=0, columnspan=3, sticky="ew", pady=6)
-        ttk.Label(form, text="Appearance", font=("", 9, "bold")).grid(row=ar + 1, column=0, sticky="w")
+        ttk.Label(form, text=_('Appearance'), font=("", 9, "bold")).grid(row=ar + 1, column=0, sticky="w")
         sexf = ttk.Frame(form)
         sexf.grid(row=ar + 1, column=1, columnspan=2, sticky="w")
         self.pilot_sex_var = tk.StringVar(value="All")
-        sex_cb = ttk.Combobox(sexf, textvariable=self.pilot_sex_var, width=8, state="readonly",
+        sex_cb = LocalizedCombobox(sexf, textvariable=self.pilot_sex_var, width=14, state="readonly",
                               values=pilot_catalog.SEX_FILTERS)
         sex_cb.pack(side="left")
         sex_cb.bind("<<ComboboxSelected>>", lambda e: self._refresh_pilot_looks())
-        ttk.Label(sexf, text="Filter by sex",
+        ttk.Label(sexf, text=_('Filter by sex'),
                   style="Muted.TLabel").pack(side="left", padx=6)
 
         def look_row(label, row, title, command, button):
             # One compact row (label, picker, button) so it fits like the trait row.
             holder = ttk.Frame(form)
             holder.grid(row=row, column=0, columnspan=3, sticky="w", pady=2)
-            ttk.Label(holder, text=label, width=8).pack(side="left")
+            ttk.Label(holder, text=_(label), width=14).pack(side="left")
             var = tk.StringVar()
             picker = SearchablePicker(holder, textvariable=var, width=26, title=title)
             picker.pack(side="left")
-            ttk.Button(holder, text=button, command=command).pack(side="left", padx=4)
+            ttk.Button(holder, text=_(button), command=command).pack(side="left", padx=4)
             return var, picker
 
         self.pilot_portrait_var, self.pilot_portrait_cb = look_row(
-            "Portrait", ar + 2, "Choose portrait", self.on_set_pilot_portrait, "Set")
+            _('Portrait'), ar + 2, _('Choose portrait'), self.on_set_pilot_portrait, _('Set'))
         self.pilot_voice_var, self.pilot_voice_cb = look_row(
-            "Voice", ar + 3, "Choose dialogue voice", self.on_set_pilot_voice, "Set")
+            _('Voice'), ar + 3, _('Choose dialogue voice'), self.on_set_pilot_voice, _('Set'))
         self.pilot_persona_var, self.pilot_persona_cb = look_row(
-            "Persona", ar + 4, "Choose persona", self.on_apply_persona, "Apply")
+            _('Persona'), ar + 4, _('Choose persona'), self.on_apply_persona, _('Apply'))
         self.pilot_bio_caption = tk.StringVar()
         ttk.Label(form, textvariable=self.pilot_bio_caption, style="Muted.TLabel").grid(
             row=ar + 6, column=0, columnspan=3, sticky="w", pady=(6, 0))
         bf = ttk.Frame(form)
         bf.grid(row=ar + 7, column=0, columnspan=3, sticky="w", pady=2)
-        ttk.Label(bf, text="Bio", width=8).pack(side="left", anchor="n")
+        ttk.Label(bf, text=_('Bio'), width=14).pack(side="left", anchor="n")
         self.pilot_bio_text = tk.Text(bf, width=34, height=5, wrap="word")
         self.pilot_bio_text.pack(side="left")
-        ttk.Button(bf, text="Set", command=self.on_set_pilot_bio).pack(
+        ttk.Button(bf, text=_('Set'), command=self.on_set_pilot_bio).pack(
             side="left", padx=4, anchor="n")
         popts = ttk.Frame(form)
         popts.grid(row=ar + 5, column=0, columnspan=3, sticky="w")
-        ttk.Label(popts, text="", width=8).pack(side="left")
+        ttk.Label(popts, text="", width=14).pack(side="left")
         self.pilot_persona_all_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(popts, text="Show all personas", variable=self.pilot_persona_all_var,
+        ttk.Checkbutton(popts, text=_('Show all personas'), variable=self.pilot_persona_all_var,
                         command=self._refresh_pilot_looks).pack(side="left")
         self.pilot_persona_text_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(popts, text="Also set name & bio",
+        ttk.Checkbutton(popts, text=_('Also set name & bio'),
                         variable=self.pilot_persona_text_var).pack(side="left", padx=8)
 
     # -- inventory tab -----------------------------------------------------
@@ -981,22 +1003,22 @@ class EditorApp(tk.Tk):
         top.pack(fill="x", padx=4, pady=6)
 
         # C-Bills
-        ttk.Label(top, text="C-Bills:").grid(row=0, column=0, sticky="w")
+        ttk.Label(top, text=_('C-Bills:')).grid(row=0, column=0, sticky="w")
         self.cbills_var = tk.StringVar(value="0")
         ttk.Entry(top, textvariable=self.cbills_var, width=16).grid(row=0, column=1, sticky="w", padx=4)
-        ttk.Button(top, text="Set C-Bills", command=self.on_set_cbills).grid(row=0, column=2, padx=4)
-        ttk.Button(top, text="Max (2,000,000,000)",
+        ttk.Button(top, text=_('Set C-Bills'), command=self.on_set_cbills).grid(row=0, column=2, padx=4)
+        ttk.Button(top, text=_('Max (2,000,000,000)'),
                    command=lambda: (self.cbills_var.set("2000000000"), self.on_set_cbills())
                    ).grid(row=0, column=3, padx=4)
 
-        ttk.Label(top, text="Campaign Date:").grid(row=1, column=0, sticky="w", pady=(6, 0))
+        ttk.Label(top, text=_('Campaign Date:')).grid(row=1, column=0, sticky="w", pady=(6, 0))
         self.campaign_date_current_var = tk.StringVar(value="N/A")
         ttk.Label(top, textvariable=self.campaign_date_current_var).grid(
             row=1, column=1, sticky="w", padx=4, pady=(6, 0))
         self.campaign_date_var = tk.StringVar()
         ttk.Entry(top, textvariable=self.campaign_date_var, width=12).grid(
             row=1, column=2, sticky="w", padx=4, pady=(6, 0))
-        ttk.Button(top, text="Set Date", command=self.on_set_campaign_date).grid(
+        ttk.Button(top, text=_('Set Date'), command=self.on_set_campaign_date).grid(
             row=1, column=3, sticky="w", padx=4, pady=(6, 0))
         ttk.Label(top, text="YYYY.MM.DD", style="Muted.TLabel").grid(
             row=1, column=4, sticky="w", padx=4, pady=(6, 0))
@@ -1006,41 +1028,41 @@ class EditorApp(tk.Tk):
         # Add-item row (mirrors the classic editor: Item / Count / Type / Add)
         add = ttk.Frame(self.inv_tab)
         add.pack(fill="x", padx=4, pady=6)
-        ttk.Label(add, text="Type:").grid(row=0, column=0, sticky="w")
+        ttk.Label(add, text=_('Type:')).grid(row=0, column=0, sticky="w")
         self.inv_type_var = tk.StringVar(value="weapon")
-        type_cb = ttk.Combobox(add, textvariable=self.inv_type_var, width=12, state="readonly",
+        type_cb = LocalizedCombobox(add, textvariable=self.inv_type_var, width=16, state="readonly",
                                values=["weapon", "equipment", "ammo"])
         type_cb.grid(row=0, column=1, padx=4)
         type_cb.bind("<<ComboboxSelected>>", lambda e: self._refresh_item_choices())
 
-        ttk.Label(add, text="Item:").grid(row=0, column=2, sticky="w", padx=(8, 0))
+        ttk.Label(add, text=_('Item:')).grid(row=0, column=2, sticky="w", padx=(8, 0))
         self.inv_item_var = tk.StringVar()
         self.inv_item_cb = SearchablePicker(add, textvariable=self.inv_item_var,
-                                            width=24, title="Choose inventory item")
+                                            width=24, title=_('Choose inventory item'))
         self.inv_item_cb.grid(row=0, column=3, padx=4)
 
-        ttk.Label(add, text="Count:").grid(row=0, column=4, sticky="w", padx=(8, 0))
+        ttk.Label(add, text=_('Count:')).grid(row=0, column=4, sticky="w", padx=(8, 0))
         self.inv_count_var = tk.StringVar(value="1")
         ttk.Spinbox(add, from_=1, to=9999, textvariable=self.inv_count_var, width=6).grid(row=0, column=5, padx=4)
 
-        ttk.Button(add, text="Add to Inventory", command=self.on_add_item).grid(
+        ttk.Button(add, text=_('Add to Inventory'), command=self.on_add_item).grid(
             row=1, column=2, columnspan=4, sticky="w", padx=8, pady=(4, 0))
 
         # filter / search row
         filt = ttk.Frame(self.inv_tab)
         filt.pack(fill="x", padx=4, pady=(2, 0))
-        ttk.Label(filt, text="Filter:").pack(side="left")
+        ttk.Label(filt, text=_('Filter:')).pack(side="left")
         self.inv_filter_var = tk.StringVar()
         ttk.Entry(filt, textvariable=self.inv_filter_var, width=30).pack(side="left", padx=4)
         self.inv_filter_var.trace_add("write", lambda *a: self._render_inventory())
-        ttk.Label(filt, text="Sort:").pack(side="left", padx=(8, 2))
+        ttk.Label(filt, text=_('Sort:')).pack(side="left", padx=(8, 2))
         self.inv_sort_var = tk.StringVar(value="A–Z")
-        sort = ttk.Combobox(filt, textvariable=self.inv_sort_var, state="readonly",
-                            values=("A–Z", "Z–A", "Column order"), width=12)
+        sort = LocalizedCombobox(filt, textvariable=self.inv_sort_var, state="readonly",
+                            values=("A–Z", "Z–A", "Column order"), width=20)
         sort.pack(side="left")
         sort.bind("<<ComboboxSelected>>", self._on_inventory_sort_choice)
-        ttk.Label(filt, text="(click a column header to sort • shift/ctrl-click rows to multi-select)",
-                  style="Muted.TLabel").pack(side="left", padx=8)
+        ttk.Label(filt, text=_('(click a column header to sort • shift/ctrl-click rows to multi-select)'),
+                  style="Muted.TLabel", wraplength=340).pack(side="left", padx=8)
 
         # Current inventory list
         iwrap = ttk.Frame(self.inv_tab)
@@ -1048,7 +1070,7 @@ class EditorApp(tk.Tk):
         cols = ("type", "item", "count")
         self.inv_tree = ttk.Treeview(iwrap, columns=cols, show="headings", selectmode="extended")
         for c, txt, w in (("type", "Asset Type", 180), ("item", "Item ID", 300), ("count", "Count", 70)):
-            self.inv_tree.heading(c, text=txt, command=lambda col=c: self._sort_inventory(col))
+            self.inv_tree.heading(c, text=_(txt), command=lambda col=c: self._sort_inventory(col))
             self.inv_tree.column(c, width=w, anchor=("center" if c == "count" else "w"))
         isb = ttk.Scrollbar(iwrap, orient="vertical", command=self.inv_tree.yview)
         self.inv_tree.configure(yscrollcommand=isb.set)
@@ -1060,8 +1082,8 @@ class EditorApp(tk.Tk):
 
         btns = ttk.Frame(self.inv_tab)
         btns.pack(fill="x", padx=4, pady=(0, 6))
-        ttk.Button(btns, text="Set Count of Selected…", command=self.on_set_item_count).pack(side="left")
-        ttk.Button(btns, text="Remove Selected", command=self.on_remove_item).pack(side="left", padx=4)
+        ttk.Button(btns, text=_('Set Count of Selected…'), command=self.on_set_item_count).pack(side="left")
+        ttk.Button(btns, text=_('Remove Selected'), command=self.on_remove_item).pack(side="left", padx=4)
 
         self._refresh_item_choices()
 
@@ -1076,14 +1098,13 @@ class EditorApp(tk.Tk):
     def _build_faction_tab(self):
         top = ttk.Frame(self.faction_tab)
         top.pack(fill="x", padx=4, pady=6)
-        ttk.Label(top, text="Company Reputation:").grid(row=0, column=0, sticky="w")
+        ttk.Label(top, text=_('Company Reputation:')).grid(row=0, column=0, sticky="w")
         self.rep_var = tk.StringVar(value="0")
         ttk.Entry(top, textvariable=self.rep_var, width=12).grid(row=0, column=1, padx=4)
-        ttk.Button(top, text="Set Reputation", command=self.on_set_reputation).grid(row=0, column=2, padx=4)
+        ttk.Button(top, text=_('Set Reputation'), command=self.on_set_reputation).grid(row=0, column=2, padx=4)
 
         ttk.Label(self.faction_tab,
-                  text="Faction standings (typically range -100 hostile … +100 allied). "
-                       "Double-click a row to edit.",
+                  text=_('Faction standings (typically range -100 hostile … +100 allied). Double-click a row to edit.'),
                   style="Muted.TLabel").pack(anchor="w", padx=6)
 
         fwrap = ttk.Frame(self.faction_tab)
@@ -1091,8 +1112,8 @@ class EditorApp(tk.Tk):
         cols = ("faction", "standing")
         self.faction_tree = ttk.Treeview(fwrap, columns=cols, show="headings",
                                          selectmode="browse")
-        self.faction_tree.heading("faction", text="Faction")
-        self.faction_tree.heading("standing", text="Standing")
+        self.faction_tree.heading("faction", text=_('Faction'))
+        self.faction_tree.heading("standing", text=_('Standing'))
         self.faction_tree.column("faction", width=240)
         self.faction_tree.column("standing", width=100, anchor="center")
         fsb = ttk.Scrollbar(fwrap, orient="vertical", command=self.faction_tree.yview)
@@ -1103,10 +1124,10 @@ class EditorApp(tk.Tk):
 
         btns = ttk.Frame(self.faction_tab)
         btns.pack(fill="x", padx=6, pady=(0, 6))
-        ttk.Button(btns, text="Edit Selected…", command=self.on_edit_standing).pack(side="left")
-        ttk.Button(btns, text="Set ALL to +100 (allied)",
+        ttk.Button(btns, text=_('Edit Selected…'), command=self.on_edit_standing).pack(side="left")
+        ttk.Button(btns, text=_('Set ALL to +100 (allied)'),
                    command=lambda: self.on_set_all_factions(100)).pack(side="left", padx=4)
-        ttk.Button(btns, text="Set ALL to 0 (neutral)",
+        ttk.Button(btns, text=_('Set ALL to 0 (neutral)'),
                    command=lambda: self.on_set_all_factions(0)).pack(side="left")
 
     def _refresh_factions(self):
@@ -1121,8 +1142,8 @@ class EditorApp(tk.Tk):
         try:
             self.save.reputation = int(self.rep_var.get())
         except ValueError:
-            return messagebox.showerror("Invalid", "Reputation must be a whole number.")
-        self.status.set(f"Set reputation to {self.save.reputation}. Remember to Save.")
+            return messagebox.showerror(_('Invalid'), _('Reputation must be a whole number.'))
+        self.status.set(_('Set reputation to {p0}. Remember to Save.', p0=self.save.reputation))
 
     def _on_faction_double_click(self, event):
         row = self.faction_tree.identify_row(event.y)
@@ -1139,7 +1160,7 @@ class EditorApp(tk.Tk):
             return self._need_selection()
         idx = int(sel[0])
         f = self.save.factions()[idx]
-        new = simpledialog.askinteger("Edit standing", f"Standing for {f.name}:",
+        new = simpledialog.askinteger(_('Edit standing'), _('Standing for {p0}:', p0=f.name),
                                       initialvalue=f.standing, minvalue=-1000, maxvalue=1000,
                                       parent=self)
         if new is None:
@@ -1147,7 +1168,7 @@ class EditorApp(tk.Tk):
         f.standing = new
         self._refresh_factions()
         self.faction_tree.selection_set(str(idx))
-        self.status.set(f"Set {f.name} standing to {new}. Remember to Save.")
+        self.status.set(_('Set {p0} standing to {p1}. Remember to Save.', p0=f.name, p1=new))
 
     def on_set_all_factions(self, value):
         if not self._guard():
@@ -1155,27 +1176,22 @@ class EditorApp(tk.Tk):
         for f in self.save.factions():
             f.standing = value
         self._refresh_factions()
-        self.status.set(f"Set all faction standings to {value}. Remember to Save.")
+        self.status.set(_('Set all faction standings to {p0}. Remember to Save.', p0=value))
 
     def _build_cantina_tab(self):
-        self.cantina_info = tk.StringVar(value="Open a save to edit Cantina career progress.")
+        self.cantina_info = tk.StringVar(value=_("Open a save to edit Cantina career progress."))
         ttk.Label(self.cantina_tab, textvariable=self.cantina_info, wraplength=650).pack(
             fill="x", padx=8, pady=8)
         ttk.Label(self.cantina_tab, wraplength=650, text=(
-            "Set points/tier also unlocks the corresponding built-in mech upgrades. "
-            "Missing paths appear at zero and are created only when edited. Lowering points "
-            "keeps existing upgrades. Jobs, offers and campaign unlocks stay unchanged. "
-            "Experimental: test with Save As on a copy.")).pack(fill="x", padx=8)
+            _('Set points/tier also unlocks the corresponding built-in mech upgrades. Missing paths appear at zero and are created only when edited. Lowering points keeps existing upgrades. Jobs, offers and campaign unlocks stay unchanged. Experimental: test with Save As on a copy.'))).pack(fill="x", padx=8)
         ttk.Label(self.cantina_tab, wraplength=650, text=(
-            "Current game assets give Mech Collector tiers 5 and 6 the same "
-            "95-point threshold; the effective tier will display as 6. "
-            "Thresholds and upgrade rewards use the built-in game data; mods changing careers may differ.")
+            _('Current game assets give Mech Collector tiers 5 and 6 the same 95-point threshold; the effective tier will display as 6. Thresholds and upgrade rewards use the built-in game data; mods changing careers may differ.'))
                   ).pack(fill="x", padx=8)
         self.cantina_tree = ttk.Treeview(self.cantina_tab,
                                         columns=("path", "points", "tier", "record"), show="headings")
         for column, label, width in (("path", "Career path", 260), ("points", "Points", 100),
                                      ("tier", "Tier from points", 130), ("record", "Progress record", 130)):
-            self.cantina_tree.heading(column, text=label)
+            self.cantina_tree.heading(column, text=_(label))
             self.cantina_tree.column(column, width=width)
         self.cantina_tree.pack(fill="both", expand=True, padx=8, pady=8)
         actions = ttk.Frame(self.cantina_tab)
@@ -1185,7 +1201,7 @@ class EditorApp(tk.Tk):
                                ("Set points…", lambda: self._edit_cantina(False)),
                                ("Max all paths…", self._max_cantina),
                                ("Sync upgrade unlocks…", self._sync_cantina_unlocks)):
-            button = ttk.Button(actions, text=label, command=command, state="disabled")
+            button = ttk.Button(actions, text=_(label), command=command, state="disabled")
             button.pack(side="left", padx=(0, 6))
             self._cantina_buttons.append(button)
         self._cantina_paths = []
@@ -1200,12 +1216,12 @@ class EditorApp(tk.Tk):
         except ValueError as exc:
             self._cantina_paths = []
             info = str(exc)
-        self.cantina_info.set(info)
+        self.cantina_info.set(_(info))
         for i, path in enumerate(self._cantina_paths):
             self.cantina_tree.insert("", "end", iid=str(i),
-                                     values=(path.label, path.points,
-                                             path.tier if path.tier is not None else "Unknown",
-                                             "Saved" if path.progress is not None else "Not started"))
+                                     values=(_(path.label), path.points,
+                                             path.tier if path.tier is not None else _("Unknown"),
+                                             _("Saved") if path.progress is not None else _("Not started")))
         for button in self._cantina_buttons:
             button.configure(state="normal" if self._cantina_paths else "disabled")
 
@@ -1216,8 +1232,10 @@ class EditorApp(tk.Tk):
         idx = int(selection[0])
         path = self._cantina_paths[idx]
         if by_tier and path.tier is None:
-            return messagebox.showinfo("Unknown thresholds", "Use Set points for this mod-added path.", parent=self)
-        value = simpledialog.askinteger("Cantina progress", f"{path.label}: {'tier (0–10)' if by_tier else 'points'}",
+            return messagebox.showinfo(_('Unknown thresholds'), _('Use Set points for this mod-added path.'), parent=self)
+        value = simpledialog.askinteger(_('Cantina progress'),
+                                        _("{p0}: {p1}", p0=_(path.label),
+                                          p1=_("tier (0–10)") if by_tier else _("points")),
                                         initialvalue=path.tier if by_tier else path.points,
                                         minvalue=0, maxvalue=10 if by_tier else 2147483647, parent=self)
         if value is None:
@@ -1228,39 +1246,36 @@ class EditorApp(tk.Tk):
             else:
                 path.set_points(value)
         except ValueError as exc:
-            return messagebox.showerror("Cantina edit not applied", str(exc), parent=self)
+            return messagebox.showerror(_('Cantina edit not applied'), str(exc), parent=self)
         self._refresh_cantina()
         selected = next(i for i, current in enumerate(self._cantina_paths) if current.asset == path.asset)
         self.cantina_tree.selection_set(str(selected))
-        self.status.set(f"{path.label}: {path.points} points, tier {path.tier}. Save As a test copy.")
+        self.status.set(_('{p0}: {p1} points, tier {p2}. Save As a test copy.', p0=path.label, p1=path.points, p2=path.tier))
 
     def _max_cantina(self):
         if not self._cantina_paths:
             return
-        if not messagebox.askyesno("Experimental Cantina edit",
-                "Max all five built-in paths and unlock their mech upgrades?\n"
-                "Missing path records will be created. Existing upgrades and mod paths are kept.\n"
-                "Jobs and reward-claim records stay unchanged. Test with Save As on a copy.", parent=self):
+        if not messagebox.askyesno(_('Experimental Cantina edit'),
+                _('Max all five built-in paths and unlock their mech upgrades?\nMissing path records will be created. Existing upgrades and mod paths are kept.\nJobs and reward-claim records stay unchanged. Test with Save As on a copy.'), parent=self):
             return
         try:
             count = cantina.max_paths(self._cantina_paths)
         except ValueError as exc:
-            return messagebox.showerror("Cantina edit not applied", str(exc), parent=self)
+            return messagebox.showerror(_('Cantina edit not applied'), str(exc), parent=self)
         self._refresh_cantina()
-        self.status.set(f"Maxed {count} Cantina paths and synced upgrade unlocks. Save As a test copy.")
+        self.status.set(_('Maxed {p0} Cantina paths and synced upgrade unlocks. Save As a test copy.', p0=count))
 
     def _sync_cantina_unlocks(self):
         if not self._cantina_paths:
             return
-        if not messagebox.askyesno("Sync Cantina upgrades",
-                "Add missing built-in mech-upgrade unlocks for the current path points?\n"
-                "Points and existing upgrades are kept. Test with Save As on a copy.", parent=self):
+        if not messagebox.askyesno(_('Sync Cantina upgrades'),
+                _('Add missing built-in mech-upgrade unlocks for the current path points?\nPoints and existing upgrades are kept. Test with Save As on a copy.'), parent=self):
             return
         try:
             count = cantina.sync_unlocks(self.save)
         except ValueError as exc:
-            return messagebox.showerror("Cantina edit not applied", str(exc), parent=self)
-        self.status.set(f"Added {count} missing Cantina upgrade unlocks. Save As a test copy.")
+            return messagebox.showerror(_('Cantina edit not applied'), str(exc), parent=self)
+        self.status.set(_('Added {p0} missing Cantina upgrade unlocks. Save As a test copy.', p0=count))
 
     def _build_item_catalog(self):
         """Merge the built-in item lists with everything the loaded save
@@ -1285,8 +1300,8 @@ class EditorApp(tk.Tk):
     def on_open(self):
         initial = DEFAULT_SAVE_DIR if os.path.isdir(DEFAULT_SAVE_DIR) else None
         path = filedialog.askopenfilename(
-            title="Open MW5 save", initialdir=initial,
-            filetypes=[("MW5 save", "*.sav"), ("All files", "*.*")])
+            title=_('Open MW5 save'), initialdir=initial,
+            filetypes=[(_('MW5 save'), "*.sav"), (_('All files'), "*.*")])
         if not path:
             return
         try:
@@ -1303,11 +1318,9 @@ class EditorApp(tk.Tk):
             self._refresh_inventory()
             self._refresh_factions()
             self._refresh_cantina()
-            self.status.set(f"Loaded {os.path.basename(path)} — "
-                            f"{len(self.save.mechs())} mechs, {len(self.save.pilots())} pilots, "
-                            f"{self.save.cbills:,} C-Bills. {backup_status}")
+            self.status.set(_('Loaded {p0} — {p1} mechs, {p2} pilots, {p3:,} C-Bills. {p4}', p0=os.path.basename(path), p1=len(self.save.mechs()), p2=len(self.save.pilots()), p3=self.save.cbills, p4=backup_status))
         except Exception as e:
-            self._error("Failed to open save", e)
+            self._error(_('Failed to open save'), e)
 
     def on_save(self):
         if not self._guard():
@@ -1318,9 +1331,9 @@ class EditorApp(tk.Tk):
         if not self._guard():
             return
         path = filedialog.asksaveasfilename(
-            title="Save As", defaultextension=".sav",
+            title=_('Save As'), defaultextension=".sav",
             initialdir=os.path.dirname(self.path) if self.path else None,
-            filetypes=[("MW5 save", "*.sav"), ("All files", "*.*")])
+            filetypes=[(_('MW5 save'), "*.sav"), (_('All files'), "*.*")])
         if path:
             self._write(path, backup=True)
 
@@ -1330,52 +1343,46 @@ class EditorApp(tk.Tk):
                 ensure_backup(path)
             atomic_save(self.save, path)
             self.path = path
-            self.status.set(f"Saved {os.path.basename(path)}"
-                            + ("  (backup: .bak)" if os.path.exists(path + ".bak") else ""))
-            messagebox.showinfo("Saved", f"Wrote {os.path.basename(path)} successfully.")
+            self.status.set(_('Saved {p0}', p0=os.path.basename(path))
+                            + (_('  (backup: .bak)') if os.path.exists(path + ".bak") else ""))
+            messagebox.showinfo(_('Saved'), _('Wrote {p0} successfully.', p0=os.path.basename(path)))
         except Exception as e:
-            self._error("Failed to save", e)
+            self._error(_('Failed to save'), e)
 
     # -- export / import ---------------------------------------------------
     def on_export(self):
         if not self._guard():
             return
         cats = CategoryDialog(
-            self, "Export to file",
-            "Choose what to export to a portable .mw5export file\n"
-            "(you can import it into another save later):").result
+            self, _('Export to file'),
+            _('Choose what to export to a portable .mw5export file\n(you can import it into another save later):')).result
         if cats is None:
             return
         path = filedialog.asksaveasfilename(
-            title="Export to…", defaultextension=".mw5export",
+            title=_('Export to…'), defaultextension=".mw5export",
             initialfile="my-mechs.mw5export",
-            filetypes=[("MW5 export", "*.mw5export"), ("All files", "*.*")])
+            filetypes=[(_('MW5 export'), "*.mw5export"), (_('All files'), "*.*")])
         if not path:
             return
         try:
             s = self.save.export_to(path, **cats)
-            self.status.set(f"Exported {s['mechs']} mechs, {s['pilots']} pilots, "
-                            f"{s['weapons'] + s['equipment']} items.")
-            messagebox.showinfo("Exported",
-                                f"Exported to {os.path.basename(path)}:\n\n"
-                                f"  {s['mechs']} mechs\n  {s['pilots']} pilots\n"
-                                f"  {s['weapons'] + s['equipment']} inventory items")
+            self.status.set(_('Exported {p0} mechs, {p1} pilots, {p2} items.', p0=s['mechs'], p1=s['pilots'], p2=s['weapons'] + s['equipment']))
+            messagebox.showinfo(_('Exported'),
+                                _('Exported to {p0}:\n\n  {p1} mechs\n  {p2} pilots\n  {p3} inventory items', p0=os.path.basename(path), p1=s['mechs'], p2=s['pilots'], p3=s['weapons'] + s['equipment']))
         except Exception as e:
-            self._error("Export failed", e)
+            self._error(_('Export failed'), e)
 
     def on_import(self):
         if not self._guard():
             return
         path = filedialog.askopenfilename(
-            title="Import from…",
-            filetypes=[("MW5 export", "*.mw5export"), ("All files", "*.*")])
+            title=_('Import from…'),
+            filetypes=[(_('MW5 export'), "*.mw5export"), (_('All files'), "*.*")])
         if not path:
             return
         cats = CategoryDialog(
-            self, "Import into this save",
-            "Choose what to ADD from the file into the currently open save.\n"
-            "Mechs and pilots are added with fresh IDs (they don't replace\n"
-            "what's here). Save afterwards to keep the changes.").result
+            self, _('Import into this save'),
+            _("Choose what to ADD from the file into the currently open save.\nMechs and pilots are added with fresh IDs (they don't replace\nwhat's here). Save afterwards to keep the changes.")).result
         if cats is None:
             return
         try:
@@ -1384,15 +1391,11 @@ class EditorApp(tk.Tk):
             self._refresh_pilots()
             self._refresh_inventory()
             self._refresh_factions()
-            self.status.set(f"Imported {s['mechs']} mechs, {s['pilots']} pilots, "
-                            f"{s['items']} items. Remember to Save.")
-            messagebox.showinfo("Imported",
-                                f"Added from {os.path.basename(path)}:\n\n"
-                                f"  {s['mechs']} mechs\n  {s['pilots']} pilots\n"
-                                f"  {s['items']} inventory items\n\n"
-                                "Click Save to write them into your save file.")
+            self.status.set(_('Imported {p0} mechs, {p1} pilots, {p2} items. Remember to Save.', p0=s['mechs'], p1=s['pilots'], p2=s['items']))
+            messagebox.showinfo(_('Imported'),
+                                _('Added from {p0}:\n\n  {p1} mechs\n  {p2} pilots\n  {p3} inventory items\n\nClick Save to write them into your save file.', p0=os.path.basename(path), p1=s['mechs'], p2=s['pilots'], p3=s['items']))
         except Exception as e:
-            self._error("Import failed", e)
+            self._error(_('Import failed'), e)
 
     # -- mech actions ------------------------------------------------------
     def _mech_list(self):
@@ -1434,7 +1437,7 @@ class EditorApp(tk.Tk):
         self._highlight_selected()
         self.mech_canvas.yview_moveto(0)
         self.mech_count_var.set(
-            f"Active bay: {len(active)}    Cold storage: {len(cold)}    (total {len(active) + len(cold)})")
+            _('Active bay: {p0}    Cold storage: {p1}    (total {p2})', p0=len(active), p1=len(cold), p2=len(active) + len(cold)))
 
     def _selected_mech_index(self):
         return self._sel_mech
@@ -1448,52 +1451,37 @@ class EditorApp(tk.Tk):
     def on_add_mech(self):
         if not self._guard():
             return
-        chassis = self._pick_chassis("Add Mech")
+        chassis = self._pick_chassis(_('Add Mech'))
         if chassis is None:
             return
         to_cold = messagebox.askyesno(
-            "Add to Cold Storage?",
-            "Add this mech to Cold Storage?\n\n"
-            "Yes — Cold Storage (recommended): always works, even if your active "
-            "bay is full. Move it to the bay in-game if there's room.\n\n"
-            "No — Active Bay: only appears if you have a free bay slot in-game. "
-            "If your bay is full it won't show up.")
+            _('Add to Cold Storage?'),
+            _("Add this mech to Cold Storage?\n\nYes — Cold Storage (recommended): always works, even if your active bay is full. Move it to the bay in-game if there's room.\n\nNo — Active Bay: only appears if you have a free bay slot in-game. If your bay is full it won't show up."))
         location = "cold" if to_cold else "active"
-        where = "Cold Storage" if to_cold else "the Active Bay"
+        where = _("Cold Storage") if to_cold else _("Active Bay")
         try:
             _guid, status = self.save.add_mech(chassis, location=location)
             self._refresh_mechs()
             label = mech_display(chassis)
             if status == "stock":
-                self.status.set(f"Added {label} to {where} — full stock loadout "
-                                "(weapons, armor, equipment). Remember to Save.")
+                self.status.set(_('Added {p0} to {p1} — full stock loadout (weapons, armor, equipment). Remember to Save.', p0=label, p1=where))
                 messagebox.showinfo(
-                    "Mech added",
-                    f"Added a stock {label} to {where} with its real factory loadout: "
-                    "correct armor, weapons, weapon groups and equipment for that chassis. "
-                    "Ready to deploy, or tweak it in Edit Loadout / the in-game Mech Lab.")
+                    _('Mech added'),
+                    _('Added a stock {p0} to {p1} with its real factory loadout: correct armor, weapons, weapon groups and equipment for that chassis. Ready to deploy, or tweak it in Edit Loadout / the in-game Mech Lab.', p0=label, p1=where))
             elif status == "exact":
-                self.status.set(f"Added {label} to {where} — exact copy of one you own. Remember to Save.")
+                self.status.set(_('Added {p0} to {p1} — exact copy of one you own. Remember to Save.', p0=label, p1=where))
             elif status == "real-layout":
-                self.status.set(f"Added {label} to {where} with its real hardpoints (empty). "
-                                "Fit weapons in Edit Loadout. Remember to Save.")
+                self.status.set(_('Added {p0} to {p1} with its real hardpoints (empty). Fit weapons in Edit Loadout. Remember to Save.', p0=label, p1=where))
                 messagebox.showinfo(
-                    "Mech added",
-                    f"Added a {label} to {where}. Your save had a real {label} loadout on "
-                    "record, so it got that chassis's correct (empty) hardpoints.\n\n"
-                    "Use Edit Loadout to fit weapons and set groups — no Mech Lab needed.")
+                    _('Mech added'),
+                    _("Added a {p0} to {p1}. Your save had a real {p2} loadout on record, so it got that chassis's correct (empty) hardpoints.\n\nUse Edit Loadout to fit weapons and set groups — no Mech Lab needed.", p0=label, p1=where, p2=label))
             else:
-                self.status.set(f"Added {label} to {where} (approximate — set hardpoints / refit in Mech Lab). Remember to Save.")
+                self.status.set(_('Added {p0} to {p1} (approximate — set hardpoints / refit in Mech Lab). Remember to Save.', p0=label, p1=where))
                 messagebox.showinfo(
-                    "Approximate mech added",
-                    f"Added a {label} to {where}. You don't own one and your save has no "
-                    f"{label} loadout to copy, so it's an approximate clone with its weapons "
-                    "stripped.\n\nEither refit it in the in-game Mech Lab, or use "
-                    "\"Set Hardpoints…\" to borrow a layout, then Edit Loadout. "
-                    "(A different-chassis mech can't be built perfectly from save "
-                    "data alone.)")
+                    _('Approximate mech added'),
+                    _('Added a {p0} to {p1}. You don\'t own one and your save has no {p2} loadout to copy, so it\'s an approximate clone with its weapons stripped.\n\nEither refit it in the in-game Mech Lab, or use "Set Hardpoints…" to borrow a layout, then Edit Loadout. (A different-chassis mech can\'t be built perfectly from save data alone.)', p0=label, p1=where, p2=label))
         except Exception as e:
-            self._error("Failed to add mech", e)
+            self._error(_('Failed to add mech'), e)
 
     def on_edit_loadout(self):
         if not self._guard():
@@ -1510,7 +1498,7 @@ class EditorApp(tk.Tk):
                       trait_names=trait_dropdown_values(
                           self.traitcat.get("mech", []), MECH_TRAITS),
                       on_apply=lambda: (self._refresh_mechs(),
-                      self.status.set(f"Loadout updated for mech #{idx}. Remember to Save.")))
+                      self.status.set(_('Loadout updated for mech #{p0}. Remember to Save.', p0=idx))))
 
     def on_set_hardpoints(self):
         if not self._guard():
@@ -1527,23 +1515,21 @@ class EditorApp(tk.Tk):
         (the hardpoints belong to that chassis). Returns True if applied."""
         layouts = self.save.chassis_layouts()
         if not layouts:
-            messagebox.showinfo("No layouts",
-                "Your save doesn't contain any mech loadout to copy hardpoints from.")
+            messagebox.showinfo(_('No layouts'),
+                _("Your save doesn't contain any mech loadout to copy hardpoints from."))
             return False
         want = mech.chassis if mech.chassis.endswith("_MDA") else mech.chassis + "_MDA"
         items = sorted(layouts.items(), key=lambda kv: (kv[0] != want, kv[0]))
         labels = []
         for ch, (iw, _wg, _cfg) in items:
             n = len(iw.elements) if iw is not None else 0
-            tag = "  ← this chassis (correct)" if ch == want else "  (borrowed layout)"
-            labels.append(f"{mech_display(ch)}  · {n} hardpoints{tag}")
-        intro = (f"{mech_display(mech.chassis)} has no hardpoints yet.\n"
-                 if empty else f"Replace {mech_display(mech.chassis)}'s hardpoints.\n")
+            tag = _("this chassis (correct)") if ch == want else _("borrowed layout")
+            labels.append(_("{p0} · {p1} hardpoints ({p2})", p0=mech_display(ch), p1=n, p2=tag))
+        intro = (_("{p0} has no hardpoints yet.\n", p0=mech_display(mech.chassis))
+                 if empty else _("Replace {p0}'s hardpoints.\n", p0=mech_display(mech.chassis)))
         pick = ChoiceDialog(
-            self, "Set hardpoints",
-            intro + "\nPick a layout to apply, then fit weapons in Edit Loadout.\n"
-            "Same-chassis layouts are correct; 'borrowed' ones come from another\n"
-            "chassis and may need an in-game Mech Lab refit to work properly.",
+            self, _('Set hardpoints'),
+            intro + _("\nPick a layout to apply, then fit weapons in Edit Loadout.\nSame-chassis layouts are correct; 'borrowed' ones come from another\nchassis and may need an in-game Mech Lab refit to work properly."),
             labels).result
         if pick is None:
             return False
@@ -1551,22 +1537,22 @@ class EditorApp(tk.Tk):
         mech.apply_layout(*layouts[ch])
         mech.flush()
         self._refresh_mechs()
-        note = "correct layout" if ch == want else f"borrowed {mech_display(ch)} layout"
-        self.status.set(f"Set hardpoints on mech #{idx} ({note}). Open Edit Loadout to fit weapons. Save when done.")
+        note = _("correct layout") if ch == want else _("borrowed {p0} layout", p0=mech_display(ch))
+        self.status.set(_('Set hardpoints on mech #{p0} ({p1}). Open Edit Loadout to fit weapons. Save when done.', p0=idx, p1=note))
         return True
 
     def on_change_chassis(self):
         idx = self._selected_mech_index()
         if idx is None:
             return self._need_selection()
-        chassis = self._pick_chassis("Change Chassis")
+        chassis = self._pick_chassis(_('Change Chassis'))
         if chassis is None:
             return
         m = self._selected_mech()
         m.chassis = chassis
         m.flush()
         self._refresh_mechs()
-        self.status.set(f"Mech #{idx} chassis -> {chassis}. Remember to Save.")
+        self.status.set(_('Mech #{p0} chassis -> {p1}. Remember to Save.', p0=idx, p1=chassis))
 
     def on_repair(self):
         idx = self._selected_mech_index()
@@ -1575,7 +1561,7 @@ class EditorApp(tk.Tk):
         m = self._selected_mech()
         m.repair()
         m.flush()
-        self.status.set(f"Mech #{idx} repaired to full armor. Remember to Save.")
+        self.status.set(_('Mech #{p0} repaired to full armor. Remember to Save.', p0=idx))
 
     def on_repair_all(self):
         if not self._guard():
@@ -1585,8 +1571,8 @@ class EditorApp(tk.Tk):
             m.repair()
             m.flush()
             n += 1
-        self.status.set(f"Repaired all {n} mechs (armor restored to installed). Remember to Save.")
-        messagebox.showinfo("Repair All", f"Restored armor on {n} mechs.")
+        self.status.set(_('Repaired all {p0} mechs (armor restored to installed). Remember to Save.', p0=n))
+        messagebox.showinfo(_('Repair All'), _('Restored armor on {p0} mechs.', p0=n))
 
     def on_reset_to_stock(self):
         if not self._guard():
@@ -1597,22 +1583,19 @@ class EditorApp(tk.Tk):
         m = self._selected_mech()
         label = mech_display(m.chassis)
         if not messagebox.askyesno(
-                "Reset to stock",
-                f"Reset {label} to its factory-stock loadout?\n\n"
-                "This replaces its armor, weapons, weapon groups and equipment with "
-                "the chassis's stock configuration. Any custom loadout is overwritten."):
+                _('Reset to stock'),
+                _("Reset {p0} to its factory-stock loadout?\n\nThis replaces its armor, weapons, weapon groups and equipment with the chassis's stock configuration. Any custom loadout is overwritten.", p0=label)):
             return
         try:
             if self.save.reset_mech_to_stock(m):
                 self._refresh_mechs()
-                self.status.set(f"Reset {label} to stock loadout. Remember to Save.")
+                self.status.set(_('Reset {p0} to stock loadout. Remember to Save.', p0=label))
             else:
                 messagebox.showinfo(
-                    "No stock data",
-                    f"There's no stock template for {label} (it may be a modded or "
-                    "non-standard chassis), so it can't be reset to stock.")
+                    _('No stock data'),
+                    _("There's no stock template for {p0} (it may be a modded or non-standard chassis), so it can't be reset to stock.", p0=label))
         except Exception as e:
-            self._error("Failed to reset to stock", e)
+            self._error(_('Failed to reset to stock'), e)
 
     def on_export_loadout(self):
         if not self._guard():
@@ -1621,16 +1604,16 @@ class EditorApp(tk.Tk):
             return self._need_selection()
         m = self._selected_mech()
         path = filedialog.asksaveasfilename(
-            title="Export loadout", defaultextension=".mw5loadout",
+            title=_('Export loadout'), defaultextension=".mw5loadout",
             initialfile=f"{variant_code(m.chassis)}.mw5loadout",
-            filetypes=[("MW5 loadout", "*.mw5loadout"), ("All files", "*.*")])
+            filetypes=[(_('MW5 loadout'), "*.mw5loadout"), (_('All files'), "*.*")])
         if not path:
             return
         try:
             self.save.export_mech_loadout(m, path)
-            self.status.set(f"Exported {mech_display(m.chassis)} loadout to {os.path.basename(path)}.")
+            self.status.set(_('Exported {p0} loadout to {p1}.', p0=mech_display(m.chassis), p1=os.path.basename(path)))
         except Exception as e:
-            self._error("Failed to export loadout", e)
+            self._error(_('Failed to export loadout'), e)
 
     def on_import_loadout(self):
         if not self._guard():
@@ -1639,39 +1622,36 @@ class EditorApp(tk.Tk):
             return self._need_selection()
         m = self._selected_mech()
         path = filedialog.askopenfilename(
-            title="Import loadout",
-            filetypes=[("MW5 loadout", "*.mw5loadout"), ("All files", "*.*")])
+            title=_('Import loadout'),
+            filetypes=[(_('MW5 loadout'), "*.mw5loadout"), (_('All files'), "*.*")])
         if not path:
             return
         if not messagebox.askyesno(
-                "Import loadout",
-                f"Apply this loadout to {mech_display(m.chassis)}?\n\nThis overwrites its "
-                "current weapons, equipment and armor. Loadouts are meant for the same chassis."):
+                _('Import loadout'),
+                _('Apply this loadout to {p0}?\n\nThis overwrites its current weapons, equipment and armor. Loadouts are meant for the same chassis.', p0=mech_display(m.chassis))):
             return
         try:
             src = self.save.import_mech_loadout(m, path)
             self._refresh_mechs()
             if src and variant_code(src) != variant_code(m.chassis):
                 messagebox.showwarning(
-                    "Different chassis",
-                    f"That loadout was exported from {mech_display(src)}, but you applied it to "
-                    f"{mech_display(m.chassis)}. The hardpoints may not match — check it in Edit "
-                    "Loadout or the in-game Mech Lab.")
-            self.status.set(f"Imported loadout onto {mech_display(m.chassis)}. Remember to Save.")
+                    _('Different chassis'),
+                    _('That loadout was exported from {p0}, but you applied it to {p1}. The hardpoints may not match — check it in Edit Loadout or the in-game Mech Lab.', p0=mech_display(src), p1=mech_display(m.chassis)))
+            self.status.set(_('Imported loadout onto {p0}. Remember to Save.', p0=mech_display(m.chassis)))
         except Exception as e:
-            self._error("Failed to import loadout", e)
+            self._error(_('Failed to import loadout'), e)
 
     def on_remove_mech(self):
         idx = self._selected_mech_index()
         if idx is None:
             return self._need_selection()
         m = self._selected_mech()
-        if not messagebox.askyesno("Remove mech",
-                                   f"Remove mech #{idx} ({m.chassis})?"):
+        if not messagebox.askyesno(_('Remove mech'),
+                                   _('Remove mech #{p0} ({p1})?', p0=idx, p1=m.chassis)):
             return
         self.save.remove_mech(m.guid)
         self._refresh_mechs()
-        self.status.set(f"Removed mech #{idx}. Remember to Save.")
+        self.status.set(_('Removed mech #{p0}. Remember to Save.', p0=idx))
 
     def _pick_chassis(self, title):
         variant = ChassisDialog(self, title).result
@@ -1710,7 +1690,7 @@ class EditorApp(tk.Tk):
             return self._need_selection()
         pilots = self.save.pilots()
         if pilots[idx].is_commander:
-            self.status.set("Player/commander pilots keep their existing roster slots.")
+            self.status.set(_('Player/commander pilots keep their existing roster slots.'))
             return
         if offset == "top":
             offset = -len(pilots)
@@ -1718,10 +1698,10 @@ class EditorApp(tk.Tk):
             offset = len(pilots)
         new_index = self.save.move_pilot(idx, offset)
         if new_index == idx:
-            self.status.set("Pilot is already at that end of the movable roster.")
+            self.status.set(_('Pilot is already at that end of the movable roster.'))
             return
         self._refresh_pilots(selected=new_index, reload_form=False)
-        self.status.set(f"Moved pilot to roster position {new_index + 1}. Remember to Save.")
+        self.status.set(_('Moved pilot to roster position {p0}. Remember to Save.', p0=new_index + 1))
 
     def _selected_pilot_index(self):
         sel = self.pilot_list.curselection()
@@ -1763,8 +1743,8 @@ class EditorApp(tk.Tk):
         self.pilot_bio_text.delete("1.0", "end")
         self.pilot_bio_text.insert("1.0", p.bio)
         self.pilot_bio_caption.set(
-            "Current bio. Edit it, then click Set." if p.bio
-            else "This pilot has no bio. Type one, then click Set.")
+            _('Current bio. Edit it, then click Set.') if p.bio
+            else _('This pilot has no bio. Type one, then click Set.'))
 
     def _update_pilot_list_label(self, idx, p):
         """Refresh one roster entry's text without touching the form."""
@@ -1797,21 +1777,21 @@ class EditorApp(tk.Tk):
             return self._need_selection()
         value = pilot_catalog.resolve_asset(var.get())
         if not value:
-            return messagebox.showinfo(f"Pick {label}", f"Choose or type a {label} asset name.")
+            return messagebox.showinfo(_('Pick {p0}', p0=label), _('Choose or type a {p0} asset name.', p0=label))
         p = self.save.pilots()[idx]
         try:
             setattr(p, field, value)
         except ValueError as exc:
-            return messagebox.showerror("Invalid input", str(exc))
+            return messagebox.showerror(_('Invalid input'), str(exc))
         show = pilot_catalog.portrait_display if field == "portrait" else pilot_catalog.voice_display
         var.set(show(getattr(p, field)))
-        self.status.set(f"Set {p.callsign}'s {label} to {value}. Remember to Save.")
+        self.status.set(_("Set {p0}'s {p1} to {p2}. Remember to Save.", p0=p.callsign, p1=label, p2=value))
 
     def on_set_pilot_portrait(self):
-        self._set_pilot_look("portrait", self.pilot_portrait_var, "portrait")
+        self._set_pilot_look("portrait", self.pilot_portrait_var, _("Portrait"))
 
     def on_set_pilot_voice(self):
-        self._set_pilot_look("voice", self.pilot_voice_var, "voice")
+        self._set_pilot_look("voice", self.pilot_voice_var, _("Voice"))
 
     def on_set_pilot_bio(self):
         """Write the bio box to the selected pilot (as one text; Bio1/Bio2 cleared)."""
@@ -1824,7 +1804,7 @@ class EditorApp(tk.Tk):
         text = self.pilot_bio_text.get("1.0", "end").strip()
         if text != p.bio:
             p.bio = text
-        self.status.set(f"Set {p.callsign}'s bio. Remember to Save.")
+        self.status.set(_("Set {p0}'s bio. Remember to Save.", p0=p.callsign))
 
     def on_apply_persona(self):
         if not self._guard():
@@ -1834,7 +1814,7 @@ class EditorApp(tk.Tk):
             return self._need_selection()
         persona = pilot_catalog.find_persona(self.pilot_persona_var.get())
         if persona is None:
-            return messagebox.showinfo("Pick persona", "Choose a persona from the list.")
+            return messagebox.showinfo(_('Pick persona'), _('Choose a persona from the list.'))
         p = self.save.pilots()[idx]
         try:
             if persona.get("portrait"):
@@ -1851,15 +1831,15 @@ class EditorApp(tk.Tk):
                     p.callsign = pilot_catalog.persona_callsign(persona)
                     text_changed = True
                 else:
-                    note = " (no name in persona; name kept)"
+                    note = _(" (no name in persona; name kept)")
                 parts = pilot_catalog.persona_bio_parts(persona)
                 if parts is not None:
                     p.set_bio_parts(*parts)
                     bio_changed = True
                 else:
-                    note += " (no bio in persona; bio kept)"
+                    note += _(" (no bio in persona; bio kept)")
         except ValueError as exc:
-            return messagebox.showerror("Can't apply persona", str(exc))
+            return messagebox.showerror(_("Can't apply persona"), str(exc))
         # Reload only what the persona wrote; other pending edits stay put.
         self._load_pilot_look(p)
         self._refresh_pilot_looks()
@@ -1868,8 +1848,7 @@ class EditorApp(tk.Tk):
             self._update_pilot_list_label(idx, p)
         if bio_changed:
             self._load_pilot_bio(p)
-        self.status.set(f"Applied persona '{persona['asset_name']}' to pilot #{idx}{note}. "
-                        "Remember to Save.")
+        self.status.set(_("Applied persona '{p0}' to pilot #{p1}{p2}. Remember to Save.", p0=persona['asset_name'], p1=idx, p2=note))
 
     def _refresh_pilot_traits(self, pilot=None):
         if pilot is None:
@@ -1890,16 +1869,16 @@ class EditorApp(tk.Tk):
             return self._need_selection()
         name = resolve_trait(self.pilot_trait_var.get())
         if not name:
-            return messagebox.showinfo("Pick trait", "Choose or type a pilot trait asset name.")
+            return messagebox.showinfo(_('Pick trait'), _('Choose or type a pilot trait asset name.'))
         p = self.save.pilots()[idx]
         try:
             if self.save.add_pilot_trait(p, name):
                 self._refresh_pilot_traits(p)
-                self.status.set(f"Added trait '{name}' to {p.callsign}. Remember to Save.")
+                self.status.set(_("Added trait '{p0}' to {p1}. Remember to Save.", p0=name, p1=p.callsign))
             else:
-                self.status.set(f"{p.callsign} already has '{name}'.")
+                self.status.set(_("{p0} already has '{p1}'.", p0=p.callsign, p1=name))
         except Exception as e:
-            self._error("Failed to add trait", e)
+            self._error(_('Failed to add trait'), e)
 
     def on_remove_pilot_trait(self):
         if not self._guard():
@@ -1914,7 +1893,7 @@ class EditorApp(tk.Tk):
         p = self.save.pilots()[idx]
         if self.save.remove_pilot_trait(p, name):
             self._refresh_pilot_traits(p)
-            self.status.set(f"Removed trait '{name}' from {p.callsign}. Remember to Save.")
+            self.status.set(_("Removed trait '{p0}' from {p1}. Remember to Save.", p0=name, p1=p.callsign))
 
     def on_apply_pilot(self):
         if not self._guard():
@@ -1942,9 +1921,9 @@ class EditorApp(tk.Tk):
             # Reload only this group; a pending portrait/voice/bio edit survives.
             self._load_pilot_stats(p)
             self._update_pilot_list_label(idx, p)
-            self.status.set(f"Applied changes to pilot #{idx}. Remember to Save.")
+            self.status.set(_('Applied changes to pilot #{p0}. Remember to Save.', p0=idx))
         except ValueError as exc:
-            messagebox.showerror("Invalid input", f"Salary, skill XP and caps must be whole numbers.\n{exc}")
+            messagebox.showerror(_('Invalid input'), _('Salary, skill XP and caps must be whole numbers.\n{p0}', p0=exc))
 
     def on_max_caps(self):
         """Fill the cap fields for the selected pilot with the max (10)."""
@@ -1952,19 +1931,17 @@ class EditorApp(tk.Tk):
             return self._need_selection()
         for sk in CAPPED_SKILLS:
             self.pilot_vars[f"cap_{sk}"].set(str(MAX_SKILL_CAP))
-        self.status.set("Caps set to 10 — click 'Apply to Pilot' to save the change.")
+        self.status.set(_("Caps set to 10 — click 'Apply to Pilot' to save the change."))
 
     def on_add_pilot(self):
         if not self._guard():
             return
-        callsign = simpledialog.askstring("Add Pilot", "Callsign for the new pilot:")
+        callsign = simpledialog.askstring(_('Add Pilot'), _('Callsign for the new pilot:'))
         if not callsign:
             return
         randomize = messagebox.askyesno(
-            "Skills",
-            "Randomize this pilot's skills?\n\n"
-            "Yes = random skill XP (a freshly generated merc)\n"
-            "No  = start all skills at 0 (green rookie)")
+            _('Skills'),
+            _("Randomize this pilot's skills?\n\nYes = random skill XP (a freshly generated merc)\nNo  = start all skills at 0 (green rookie)"))
         if randomize:
             skills = {sk: random.randint(300, 3500) for sk in SKILLS}
         else:
@@ -1977,9 +1954,9 @@ class EditorApp(tk.Tk):
             self.pilot_list.selection_set("end")
             self.pilot_list.see("end")
             self._load_pilot_form()
-            self.status.set(f"Added pilot '{callsign}'. Tweak skills below if you like, then Save.")
+            self.status.set(_("Added pilot '{p0}'. Tweak skills below if you like, then Save.", p0=callsign))
         except Exception as e:
-            self._error("Failed to add pilot", e)
+            self._error(_('Failed to add pilot'), e)
 
     def on_remove_pilot(self):
         if not self._guard():
@@ -1994,16 +1971,13 @@ class EditorApp(tk.Tk):
         # first can still be removed (issue #17).
         if p.is_commander:
             return messagebox.showwarning(
-                "Can't remove",
-                f"Won't remove your commander ({p.callsign or 'Player 1'}). The "
-                "commander is tied to your campaign, and deleting it can corrupt "
-                "the save. (Back up first and restore the .bak if anything goes "
-                "wrong.)")
-        if not messagebox.askyesno("Remove pilot", f"Remove pilot '{p.callsign}'?"):
+                _("Can't remove"),
+                _("Won't remove your commander ({p0}). The commander is tied to your campaign, and deleting it can corrupt the save. (Back up first and restore the .bak if anything goes wrong.)", p0=p.callsign or 'Player 1'))
+        if not messagebox.askyesno(_('Remove pilot'), _("Remove pilot '{p0}'?", p0=p.callsign)):
             return
         self.save.remove_pilot(p.persona_id)
         self._refresh_pilots()
-        self.status.set(f"Removed pilot '{p.callsign}'. Remember to Save.")
+        self.status.set(_("Removed pilot '{p0}'. Remember to Save.", p0=p.callsign))
 
     # -- inventory actions -------------------------------------------------
     def _refresh_inventory(self):
@@ -2051,8 +2025,8 @@ class EditorApp(tk.Tk):
         try:
             self.save.cbills = int(self.cbills_var.get())
         except ValueError:
-            return messagebox.showerror("Invalid", "C-Bills must be a whole number.")
-        self.status.set(f"Set C-Bills to {self.save.cbills:,}. Remember to Save.")
+            return messagebox.showerror(_('Invalid'), _('C-Bills must be a whole number.'))
+        self.status.set(_('Set C-Bills to {p0:,}. Remember to Save.', p0=self.save.cbills))
 
     def on_set_campaign_date(self):
         if not self._guard():
@@ -2060,10 +2034,10 @@ class EditorApp(tk.Tk):
         try:
             self.save.set_campaign_date_text(self.campaign_date_var.get())
         except ValueError as e:
-            return messagebox.showerror("Invalid", str(e))
+            return messagebox.showerror(_('Invalid'), str(e))
         self.campaign_date_current_var.set(self.save.campaign_date_text)
         self.campaign_date_var.set(self.save.campaign_date_text)
-        self.status.set(f"Set campaign date to {self.save.campaign_date_text}. Remember to Save.")
+        self.status.set(_('Set campaign date to {p0}. Remember to Save.', p0=self.save.campaign_date_text))
 
     def on_add_item(self):
         if not self._guard():
@@ -2071,11 +2045,11 @@ class EditorApp(tk.Tk):
         cat = self.inv_type_var.get()
         name = self.inv_item_var.get().strip()
         if not name:
-            return messagebox.showinfo("Pick item", "Choose or type an item asset name.")
+            return messagebox.showinfo(_('Pick item'), _('Choose or type an item asset name.'))
         try:
             count = int(self.inv_count_var.get())
         except ValueError:
-            return messagebox.showerror("Invalid", "Count must be a whole number.")
+            return messagebox.showerror(_('Invalid'), _('Count must be a whole number.'))
         # resolve asset_type from catalog; fall back by category
         asset_type = None
         for n, t in self.cat.get(cat, []):
@@ -2090,9 +2064,9 @@ class EditorApp(tk.Tk):
         try:
             self.save.add_item(inv, asset_type, name, count)
             self._refresh_inventory()
-            self.status.set(f"Added {count}x {name}. Remember to Save.")
+            self.status.set(_('Added {p0}x {p1}. Remember to Save.', p0=count, p1=name))
         except Exception as e:
-            self._error("Failed to add item", e)
+            self._error(_('Failed to add item'), e)
 
     def _selected_inv_rows(self):
         rows = []
@@ -2109,9 +2083,9 @@ class EditorApp(tk.Tk):
         rows = self._selected_inv_rows()
         if not rows:
             return self._need_selection()
-        title = (f"New count for {rows[0]['name']}:" if len(rows) == 1
-                 else f"New count for the {len(rows)} selected items:")
-        new = simpledialog.askinteger("Set count", title,
+        title = (_("New count for {p0}:", p0=rows[0]['name']) if len(rows) == 1
+                 else _("New count for the {p0} selected items:", p0=len(rows)))
+        new = simpledialog.askinteger(_('Set count'), title,
                                       initialvalue=int(rows[0]["count"]), minvalue=0, parent=self)
         if new is None:
             return
@@ -2127,7 +2101,7 @@ class EditorApp(tk.Tk):
                 if it.asset_name in names:
                     it.count = new
         self._refresh_inventory()
-        self.status.set(f"Set count to {new} for {len(rows)} item(s). Remember to Save.")
+        self.status.set(_('Set count to {p0} for {p1} item(s). Remember to Save.', p0=new, p1=len(rows)))
 
     def on_remove_item(self):
         if not self._guard():
@@ -2135,23 +2109,23 @@ class EditorApp(tk.Tk):
         rows = self._selected_inv_rows()
         if not rows:
             return self._need_selection()
-        if not messagebox.askyesno("Remove items",
-                                   f"Remove {len(rows)} selected item(s) from inventory?"):
+        if not messagebox.askyesno(_('Remove items'),
+                                   _('Remove {p0} selected item(s) from inventory?', p0=len(rows))):
             return
         for r in rows:
             self.save.remove_item(r["inv"], r["name"])
         self._refresh_inventory()
-        self.status.set(f"Removed {len(rows)} item(s). Remember to Save.")
+        self.status.set(_('Removed {p0} item(s). Remember to Save.', p0=len(rows)))
 
     # -- helpers -----------------------------------------------------------
     def _guard(self):
         if self.save is None:
-            messagebox.showwarning("No save", "Open a .sav file first.")
+            messagebox.showwarning(_('No save'), _('Open a .sav file first.'))
             return False
         return True
 
     def _need_selection(self):
-        messagebox.showinfo("Select first", "Select an item in the list first.")
+        messagebox.showinfo(_('Select first'), _('Select an item in the list first.'))
 
     def _error(self, title, exc):
         traceback.print_exc()
@@ -2170,7 +2144,7 @@ class LoadoutDialog(tk.Toplevel):
         self.on_apply = on_apply
         self.save = save
         self.trait_names = trait_names or []
-        self.title(f"Edit Loadout — {mech_display(mech.chassis)}")
+        self.title(_('Edit Loadout — {p0}', p0=mech_display(mech.chassis)))
         self.geometry("1000x660")
         self.transient(parent)
 
@@ -2241,8 +2215,8 @@ class LoadoutDialog(tk.Toplevel):
         # matter how tall the loadout content gets.
         btns = ttk.Frame(self)
         btns.pack(side="bottom", fill="x", padx=10, pady=10)
-        ttk.Button(btns, text="Apply", command=self._apply).pack(side="right")
-        ttk.Button(btns, text="Cancel", command=self.destroy).pack(side="right", padx=6)
+        ttk.Button(btns, text=_('Apply'), command=self._apply).pack(side="right")
+        ttk.Button(btns, text=_('Cancel'), command=self.destroy).pack(side="right", padx=6)
 
         # Everything else lives in ONE vertically scrollable area (scrollbar +
         # mouse wheel), so weapons, equipment, armor and traits are all reachable
@@ -2273,10 +2247,10 @@ class LoadoutDialog(tk.Toplevel):
         # view toggle: Body (paper-doll) or List (dense, all hardpoints)
         vt = ttk.Frame(content)
         vt.pack(anchor="w", padx=10, pady=(10, 0))
-        ttk.Label(vt, text="Loadout view:").pack(side="left")
-        ttk.Radiobutton(vt, text="Body", value="body", variable=self.view_mode,
+        ttk.Label(vt, text=_('Loadout view:')).pack(side="left")
+        ttk.Radiobutton(vt, text=_('Body'), value="body", variable=self.view_mode,
                         command=self._switch_view).pack(side="left", padx=4)
-        ttk.Radiobutton(vt, text="List (all hardpoints)", value="list",
+        ttk.Radiobutton(vt, text=_('List (all hardpoints)'), value="list",
                         variable=self.view_mode, command=self._switch_view).pack(side="left")
 
         # container rebuilt when the view is switched (vars persist, so do edits)
@@ -2286,11 +2260,10 @@ class LoadoutDialog(tk.Toplevel):
 
         # armor
         ttk.Separator(content, orient="horizontal").pack(fill="x", padx=10, pady=8)
-        ttk.Label(content, text="Armor (current / installed / chassis max)",
+        ttk.Label(content, text=_('Armor (current / installed / chassis max)'),
                   font=("", 10, "bold")).pack(anchor="w", padx=10)
         ttk.Label(content,
-                  text="MDA chassis max is a physical location cap; torso max is shared "
-                       "between front and rear armor.",
+                  text=_('MDA chassis max is a physical location cap; torso max is shared between front and rear armor.'),
                   style="Muted.TLabel").pack(anchor="w", padx=10)
         af = ttk.Frame(content)
         af.pack(fill="x", padx=10, pady=4)
@@ -2299,7 +2272,7 @@ class LoadoutDialog(tk.Toplevel):
             row, col = divmod(i, 2)
             cell = ttk.Frame(af)
             cell.grid(row=row, column=col, sticky="w", padx=4, pady=2)
-            ttk.Label(cell, text=loc, width=17).pack(side="left")
+            ttk.Label(cell, text=_(loc), width=17).pack(side="left")
             v = tk.StringVar(value=str(int(self.mech.armor_value(loc))))
             ttk.Entry(cell, textvariable=v, width=6).pack(side="left")
             self.armor_vars[loc] = v
@@ -2307,24 +2280,23 @@ class LoadoutDialog(tk.Toplevel):
             installed = int(self.mech.armor_value(loc, installed=True))
             cap_key = loc[:-4] if loc in REAR_PARTS else loc
             cap = self.max_armor.get(cap_key)
-            detail = f"installed {installed}"
+            detail = _("installed {p0}", p0=installed)
             if cap is not None:
-                detail += f" · max {int(float(cap))}"
+                detail += _(" · max {p0}", p0=int(float(cap)))
                 if cap_key in ("CenterTorso", "LeftTorso", "RightTorso"):
-                    detail += " total F+R"
+                    detail += _(" total F+R")
             ttk.Label(cell, text=detail, width=31, style="Muted.TLabel").pack(
                 side="left", padx=(4, 0))
 
-        ttk.Button(content, text="Repair armor (= installed)",
+        ttk.Button(content, text=_('Repair armor (= installed)'),
                    command=self._repair_armor).pack(anchor="w", padx=10, pady=2)
 
         # traits (Cantina-style mech quirks) -- experimental
         if self.save is not None:
             ttk.Separator(content, orient="horizontal").pack(fill="x", padx=10, pady=8)
-            ttk.Label(content, text="Mech Traits (experimental)",
+            ttk.Label(content, text=_('Mech Traits (experimental)'),
                       font=("", 10, "bold")).pack(anchor="w", padx=10)
-            ttk.Label(content, text="Cantina-style quirks (e.g. Faster Cooling). Untested in-game — "
-                      "back up your save before relying on these.",
+            ttk.Label(content, text=_('Cantina-style quirks (e.g. Faster Cooling). Untested in-game — back up your save before relying on these.'),
                       foreground="#a00", wraplength=720, justify="left").pack(anchor="w", padx=10)
             tfrm = ttk.Frame(content)
             tfrm.pack(fill="x", padx=10, pady=4)
@@ -2342,8 +2314,8 @@ class LoadoutDialog(tk.Toplevel):
             ).pack(anchor="w")
             bf = ttk.Frame(actf)
             bf.pack(anchor="w", pady=4)
-            ttk.Button(bf, text="Add", command=self._add_trait).pack(side="left")
-            ttk.Button(bf, text="Remove", command=self._remove_trait).pack(side="left", padx=4)
+            ttk.Button(bf, text=_('Add'), command=self._add_trait).pack(side="left")
+            ttk.Button(bf, text=_('Remove'), command=self._remove_trait).pack(side="left", padx=4)
             self._refresh_traits()
 
     # -- loadout views -----------------------------------------------------
@@ -2381,7 +2353,7 @@ class LoadoutDialog(tk.Toplevel):
             cls = slot.hardpoint_class or "?"
             row = ttk.Frame(parent)
             row.pack(fill="x", padx=3, pady=1)
-            ttk.Label(row, text=HARDPOINT_LABEL.get(cls, cls), width=9, font=("", 8)).pack(side="left")
+            ttk.Label(row, text=_(HARDPOINT_LABEL.get(cls, cls)), width=14, font=("", 8)).pack(side="left")
             _readable_combobox(
                 row, textvariable=var, values=self._weapon_options(slot),
                 width=BODY_LOADOUT_COMBO_WIDTH, state="readonly",
@@ -2392,7 +2364,7 @@ class LoadoutDialog(tk.Toplevel):
             kind = "Jump Jet" if "JumpJet" in slot.slot_type else "Gear"
             row = ttk.Frame(parent)
             row.pack(fill="x", padx=3, pady=1)
-            ttk.Label(row, text=kind, width=9, font=("", 8)).pack(side="left")
+            ttk.Label(row, text=_(kind), width=9, font=("", 8)).pack(side="left")
             _readable_combobox(
                 row, textvariable=var, values=self._equip_names(slot),
                 width=BODY_LOADOUT_COMBO_WIDTH, state="readonly",
@@ -2401,12 +2373,12 @@ class LoadoutDialog(tk.Toplevel):
     def _fill_panel(self, parent, sws, ews, *, sectioned=False):
         if sectioned:
             for section, section_sws in self._weapon_sections(sws):
-                ttk.Label(parent, text=section, style="Muted.TLabel",
+                ttk.Label(parent, text=_(section), style="Muted.TLabel",
                           font=("", 8, "bold")).pack(
                               anchor="w", padx=3, pady=(3, 0))
                 self._fill_weapon_rows(parent, section_sws)
             if ews:
-                ttk.Label(parent, text=ARM_EQUIPMENT_SECTION,
+                ttk.Label(parent, text=_(ARM_EQUIPMENT_SECTION),
                           style="Muted.TLabel", font=("", 8, "bold")).pack(
                               anchor="w", padx=3, pady=(3, 0))
                 self._fill_equipment_rows(parent, ews)
@@ -2414,17 +2386,17 @@ class LoadoutDialog(tk.Toplevel):
             self._fill_weapon_rows(parent, sws)
             self._fill_equipment_rows(parent, ews)
         if not sws and not ews:
-            ttk.Label(parent, text="(none)", style="Muted.TLabel", font=("", 8)).pack(padx=3, pady=2)
+            ttk.Label(parent, text=_('(none)'), style="Muted.TLabel", font=("", 8)).pack(padx=3, pady=2)
 
     def _render_body_view(self):
         f = self.loadout_frame
-        ttk.Label(f, text="Loadout — by body location  (pick a weapon/equipment per slot)",
+        ttk.Label(f, text=_('Loadout — by body location  (pick a weapon/equipment per slot)'),
                   font=("", 10, "bold")).pack(anchor="w", padx=10, pady=(8, 2))
         wloc, eloc = self._group_by_location()
         pd = ttk.Frame(f)
         pd.pack(padx=10, pady=2)
         for loc, (rr, cc) in BODY_LOCATION_POS.items():
-            panel = ttk.LabelFrame(pd, text=LOCATION_LABEL.get(loc, loc))
+            panel = ttk.LabelFrame(pd, text=_(LOCATION_LABEL.get(loc, loc)))
             panel.grid(row=rr, column=cc, padx=3, pady=3, sticky="nsew")
             self._fill_panel(
                 panel, wloc.get(loc, []), eloc.get(loc, []),
@@ -2434,10 +2406,10 @@ class LoadoutDialog(tk.Toplevel):
         others = [l for l in (list(wloc) + list(eloc)) if l not in BODY_LOCATION_POS]
         others = list(dict.fromkeys(others))
         if others:
-            op = ttk.LabelFrame(f, text="Other hardpoints")
+            op = ttk.LabelFrame(f, text=_('Other hardpoints'))
             op.pack(fill="x", padx=10, pady=(8, 2))
             for loc in others:
-                ttk.Label(op, text=LOCATION_LABEL.get(loc, loc),
+                ttk.Label(op, text=_(LOCATION_LABEL.get(loc, loc)),
                           font=("", 9, "bold")).pack(anchor="w", padx=4, pady=(4, 0))
                 self._fill_panel(op, wloc.get(loc, []), eloc.get(loc, []))
         self._render_fire_groups(f)
@@ -2446,18 +2418,18 @@ class LoadoutDialog(tk.Toplevel):
         if not self.slot_widgets:
             return
         ttk.Separator(parent, orient="horizontal").pack(fill="x", padx=10, pady=8)
-        ttk.Label(parent, text="Fire groups", font=("", 10, "bold")).pack(anchor="w", padx=10)
+        ttk.Label(parent, text=_('Fire groups'), font=("", 10, "bold")).pack(anchor="w", padx=10)
         fgf = ttk.Frame(parent)
         fgf.pack(fill="x", padx=10, pady=2)
-        ttk.Label(fgf, text="Weapon hardpoint", width=FIRE_GROUP_LABEL_WIDTH).grid(
+        ttk.Label(fgf, text=_('Weapon hardpoint'), width=FIRE_GROUP_LABEL_WIDTH).grid(
             row=0, column=0, sticky="w")
         for g in range(1, 7):
             ttk.Label(fgf, text=str(g), width=3).grid(row=0, column=g)
         for i, (slot, _var, gvars) in enumerate(self.slot_widgets, start=1):
             cls = slot.hardpoint_class or "?"
             ttk.Label(fgf, width=FIRE_GROUP_LABEL_WIDTH, anchor="w",
-                      text=f"{weapon_slot_location_label(slot.slot_id)} · "
-                           f"{HARDPOINT_LABEL.get(cls, cls)}"
+                      text=f"{localized_slot_label(slot.slot_id)} · "
+                           f"{_(HARDPOINT_LABEL.get(cls, cls))}"
                       ).grid(row=i, column=0, sticky="w", pady=1)
             for gi, gv in enumerate(gvars, start=1):
                 ttk.Checkbutton(fgf, variable=gv).grid(row=i, column=gi)
@@ -2467,7 +2439,7 @@ class LoadoutDialog(tk.Toplevel):
         """A 'chain fire' toggle per group (1-6): on = weapons in that group fire
         one after another; off = salvo (all at once). group_col0 is the grid
         column just before group 1's column."""
-        ttk.Label(grid, text="Chain fire (off = salvo)",
+        ttk.Label(grid, text=_('Chain fire (off = salvo)'),
                   width=FIRE_GROUP_LABEL_WIDTH, anchor="w",
                   style="Muted.TLabel").grid(row=row, column=0, sticky="w", pady=(6, 1))
         for gi in range(1, 7):
@@ -2478,12 +2450,12 @@ class LoadoutDialog(tk.Toplevel):
         """Dense, one-row-per-hardpoint view with inline fire groups. Renders
         every slot (good for heavily-modded mechs with many hardpoints)."""
         f = self.loadout_frame
-        ttk.Label(f, text="Loadout — all hardpoints",
+        ttk.Label(f, text=_('Loadout — all hardpoints'),
                   font=("", 10, "bold")).pack(anchor="w", padx=10, pady=(8, 2))
         grid = ttk.Frame(f)
         grid.pack(fill="x", padx=10)
-        ttk.Label(grid, text="Hardpoint / Equipment", width=34).grid(row=0, column=0, sticky="w")
-        ttk.Label(grid, text="Fitted", width=24).grid(row=0, column=1, sticky="w")
+        ttk.Label(grid, text=_('Hardpoint / Equipment'), width=34).grid(row=0, column=0, sticky="w")
+        ttk.Label(grid, text=_('Fitted'), width=24).grid(row=0, column=1, sticky="w")
         for g in range(1, 7):
             ttk.Label(grid, text=str(g), width=3).grid(row=0, column=1 + g)
         wloc, eloc = self._group_by_location()
@@ -2493,7 +2465,7 @@ class LoadoutDialog(tk.Toplevel):
         ordered = list(dict.fromkeys(ordered))
         r = 1
         for loc in ordered:
-            ttk.Label(grid, text=LOCATION_LABEL.get(loc, loc), font=("", 9, "bold")).grid(
+            ttk.Label(grid, text=_(LOCATION_LABEL.get(loc, loc)), font=("", 9, "bold")).grid(
                 row=r, column=0, columnspan=8, sticky="w", pady=(8, 1))
             r += 1
             sectioned = loc in ARM_PANEL_LOCATIONS
@@ -2501,7 +2473,7 @@ class LoadoutDialog(tk.Toplevel):
             weapon_sections = self._weapon_sections(sws) if sectioned else [(None, sws)]
             for section, section_sws in weapon_sections:
                 if section is not None:
-                    ttk.Label(grid, text=f"    {section}", width=34,
+                    ttk.Label(grid, text=f"    {_(section)}", width=34,
                               style="Muted.TLabel", font=("", 8, "bold")).grid(
                                   row=r, column=0, sticky="w", pady=(3, 1))
                     r += 1
@@ -2509,7 +2481,7 @@ class LoadoutDialog(tk.Toplevel):
                 for slot, var, gvars in section_sws:
                     cls = slot.hardpoint_class or "?"
                     ttk.Label(
-                        grid, text=f"{indent}{HARDPOINT_LABEL.get(cls, cls)}",
+                        grid, text=f"{indent}{_(HARDPOINT_LABEL.get(cls, cls))}",
                         width=34,
                     ).grid(row=r, column=0, sticky="w", pady=1)
                     _readable_combobox(
@@ -2521,14 +2493,14 @@ class LoadoutDialog(tk.Toplevel):
                     r += 1
             ews = eloc.get(loc, [])
             if sectioned and ews:
-                ttk.Label(grid, text=f"    {ARM_EQUIPMENT_SECTION}", width=34,
+                ttk.Label(grid, text=f"    {_(ARM_EQUIPMENT_SECTION)}", width=34,
                           style="Muted.TLabel", font=("", 8, "bold")).grid(
                               row=r, column=0, sticky="w", pady=(3, 1))
                 r += 1
             for slot, var in eloc.get(loc, []):
                 kind = "Jump Jet" if "JumpJet" in slot.slot_type else "Gear"
                 indent = "        " if sectioned else "    "
-                ttk.Label(grid, text=f"{indent}[{kind}]", width=34).grid(
+                ttk.Label(grid, text=f"{indent}[{_(kind)}]", width=34).grid(
                     row=r, column=0, sticky="w", pady=1)
                 _readable_combobox(
                     grid, textvariable=var, values=self._equip_names(slot),
@@ -2546,19 +2518,19 @@ class LoadoutDialog(tk.Toplevel):
     def _add_trait(self):
         name = resolve_trait(self.mtrait_var.get())
         if not name:
-            return messagebox.showinfo("Pick trait", "Choose or type a mech trait asset name.")
+            return messagebox.showinfo(_('Pick trait'), _('Choose or type a mech trait asset name.'))
         try:
             if self.save.add_mech_trait(self.mech, name, flush=False):
                 self._refresh_traits()
             else:
-                messagebox.showinfo("Already installed", f"This mech already has '{name}'.")
+                messagebox.showinfo(_('Already installed'), _("This mech already has '{p0}'.", p0=name))
         except Exception as e:
-            messagebox.showerror("Failed to add trait", f"{type(e).__name__}: {e}")
+            messagebox.showerror(_('Failed to add trait'), f"{type(e).__name__}: {e}")
 
     def _remove_trait(self):
         sel = self.mtrait_list.curselection()
         if not sel:
-            return messagebox.showinfo("Select first", "Select a trait to remove.")
+            return messagebox.showinfo(_('Select first'), _('Select a trait to remove.'))
         name = self.mtrait_list.get(sel[0])
         if self.save.remove_mech_trait(self.mech, name, flush=False):
             self._refresh_traits()
@@ -2596,15 +2568,14 @@ class LoadoutDialog(tk.Toplevel):
         try:
             armor_values = {loc: float(int(v.get())) for loc, v in self.armor_vars.items()}
         except ValueError:
-            messagebox.showerror("Invalid", "Armor values must be whole numbers.")
+            messagebox.showerror(_('Invalid'), _('Armor values must be whole numbers.'))
             return
         for loc, value in armor_values.items():
             installed = self.mech.armor_value(loc, installed=True)
             if value < 0 or value > installed:
                 messagebox.showerror(
-                    "Invalid armor",
-                    f"{loc} current armor must be between 0 and its installed armor "
-                    f"({int(installed)}).")
+                    _('Invalid armor'),
+                    _('{p0} current armor must be between 0 and its installed armor ({p1}).', p0=loc, p1=int(installed)))
                 return
         for loc, value in armor_values.items():
             self.mech.set_armor(loc, value)
@@ -2617,7 +2588,7 @@ class LoadoutDialog(tk.Toplevel):
         self.destroy()
 
 
-class CategoryDialog(simpledialog.Dialog):
+class CategoryDialog(LocalizedDialog):
     """Checkboxes for what to export/import. result = dict of kwargs or None."""
     CATS = [("mechs", "Mechs"), ("pilots", "Pilots"), ("inventory", "Inventory (weapons / equipment / ammo)"),
             ("cbills", "C-Bills"), ("factions", "Factions + reputation")]
@@ -2632,7 +2603,7 @@ class CategoryDialog(simpledialog.Dialog):
         self.vars = {}
         for key, label in self.CATS:
             v = tk.BooleanVar(value=True)
-            ttk.Checkbutton(master, text=label, variable=v).pack(padx=16, pady=1, anchor="w")
+            ttk.Checkbutton(master, text=_(label), variable=v).pack(padx=16, pady=1, anchor="w")
             self.vars[key] = v
         return None
 
@@ -2640,7 +2611,7 @@ class CategoryDialog(simpledialog.Dialog):
         self.result = {k: v.get() for k, v in self.vars.items()}
 
 
-class ChoiceDialog(simpledialog.Dialog):
+class ChoiceDialog(LocalizedDialog):
     """Simple modal: a prompt + a dropdown of choices. result = chosen string or None."""
     def __init__(self, parent, title, prompt, choices):
         self.prompt = prompt
@@ -2660,7 +2631,7 @@ class ChoiceDialog(simpledialog.Dialog):
         self.result = self.var.get()
 
 
-class ChassisDialog(simpledialog.Dialog):
+class ChassisDialog(LocalizedDialog):
     """Searchable mech picker: type to filter the 540+ chassis/variant list,
     double-click or OK to choose. Also accepts a hand-typed variant code."""
     def __init__(self, parent, title):
@@ -2670,7 +2641,7 @@ class ChassisDialog(simpledialog.Dialog):
         super().__init__(parent, title)
 
     def body(self, master):
-        ttk.Label(master, text="Search a mech (name or code), then pick one:"
+        ttk.Label(master, text=_('Search a mech (name or code), then pick one:')
                   ).pack(padx=8, pady=(8, 2), anchor="w")
         self.search_var = tk.StringVar()
         ent = ttk.Entry(master, textvariable=self.search_var, width=40)
@@ -2686,7 +2657,7 @@ class ChassisDialog(simpledialog.Dialog):
         sb.pack(side="right", fill="y")
         self.lb.bind("<Double-Button-1>", lambda e: self.ok())
 
-        ttk.Label(master, text="(or type an exact variant code above and press OK)",
+        ttk.Label(master, text=_('(or type an exact variant code above and press OK)'),
                   style="Muted.TLabel").pack(padx=8, pady=(0, 6), anchor="w")
         self._filter()
         return ent
@@ -2718,7 +2689,7 @@ class SearchablePicker(ttk.Frame):
         self.values = ()
         self.title = title
         ttk.Entry(self, textvariable=textvariable, width=width).pack(side="left", fill="x", expand=True)
-        ttk.Button(self, text="Browse…", command=self._browse).pack(side="left", padx=(4, 0))
+        ttk.Button(self, text=_('Browse…'), command=self._browse).pack(side="left", padx=(4, 0))
 
     def __getitem__(self, key):
         return self.values if key == "values" else super().__getitem__(key)
@@ -2735,13 +2706,13 @@ class SearchablePicker(ttk.Frame):
             self.variable.set(dialog.result)
 
 
-class SearchChoiceDialog(simpledialog.Dialog):
+class SearchChoiceDialog(LocalizedDialog):
     def __init__(self, parent, title, values):
         self.values = tuple(values)
         super().__init__(parent, title)
 
     def body(self, master):
-        ttk.Label(master, text="Search, select a result, then press OK:").pack(anchor="w")
+        ttk.Label(master, text=_('Search, select a result, then press OK:')).pack(anchor="w")
         self.query = tk.StringVar()
         entry = ttk.Entry(master, textvariable=self.query, width=48)
         entry.pack(fill="x", pady=4)
