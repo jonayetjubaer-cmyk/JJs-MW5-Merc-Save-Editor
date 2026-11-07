@@ -29,6 +29,7 @@ import catalog_source
 catalog_source.activate()
 import scarab_integration
 import cantina
+import progression
 from file_safety import ensure_backup, atomic_save
 
 from savefile import SaveFile, SKILLS, CAPPED_SKILLS, MAX_SKILL_CAP
@@ -50,7 +51,7 @@ def _resource_path(name: str) -> str:
             return p
     return os.path.join(candidates[-1], name)
 from mech_catalog import LABELED, asset_name, display as mech_display, variant_code, chassis_info
-from item_catalog import CATALOG, CATEGORY_INVENTORY, WEAPONS, EQUIPMENT, AMMO
+from item_catalog import CATALOG, CATEGORY_INVENTORY, WEAPONS, EQUIPMENT, AMMO, matching_ammo
 from trait_catalog import (PILOT_TRAITS, MECH_TRAITS,
                            dropdown_values as trait_dropdown_values,
                            resolve as resolve_trait)
@@ -259,7 +260,7 @@ def _readable_combobox(parent, *, width: int, **kwargs) -> ttk.Combobox:
     return combo
 
 
-APP_VERSION = "1.20.0"
+APP_VERSION = "1.21.0"
 
 # update check (GitHub is the source of truth; Nexus may lag a release behind)
 GITHUB_REPO = "jonayetjubaer-cmyk/JJs-MW5-Merc-Save-Editor"
@@ -332,16 +333,19 @@ class EditorApp(tk.Tk):
         self.inv_tab = ttk.Frame(self.nb)
         self.faction_tab = ttk.Frame(self.nb)
         self.cantina_tab = ttk.Frame(self.nb)
+        self.progress_tab = ttk.Frame(self.nb)
         self.nb.add(self.mech_tab, text=_('Mechs'))
         self.nb.add(self.pilot_tab, text=_('Pilots'))
         self.nb.add(self.inv_tab, text=_('Inventory'))
         self.nb.add(self.faction_tab, text=_('Factions'))
         self.nb.add(self.cantina_tab, text=_('Cantina (experimental)'))
+        self.nb.add(self.progress_tab, text=_('Progress'))
         self._build_mech_tab()
         self._build_pilot_tab()
         self._build_inventory_tab()
         self._build_faction_tab()
         self._build_cantina_tab()
+        self._build_progress_tab()
 
         self.status = tk.StringVar(value=_("Open a .sav file to begin."))
         ttk.Label(self, textvariable=self.status, relief="sunken",
@@ -1045,8 +1049,13 @@ class EditorApp(tk.Tk):
         self.inv_count_var = tk.StringVar(value="1")
         ttk.Spinbox(add, from_=1, to=9999, textvariable=self.inv_count_var, width=6).grid(row=0, column=5, padx=4)
 
-        ttk.Button(add, text=_('Add to Inventory'), command=self.on_add_item).grid(
-            row=1, column=2, columnspan=4, sticky="w", padx=8, pady=(4, 0))
+        actions = ttk.Frame(add)
+        actions.grid(row=1, column=0, columnspan=6, sticky="w", pady=(4, 0))
+        ttk.Button(actions, text=_('Add to Inventory'), command=self.on_add_item).pack(side="left")
+        self.add_ammo_var = tk.BooleanVar(value=False)
+        self.add_ammo_check = ttk.Checkbutton(actions, text=_('Add ammo with weapon'),
+                                              variable=self.add_ammo_var)
+        self.add_ammo_check.pack(side="left", padx=8)
 
         # filter / search row
         filt = ttk.Frame(self.inv_tab)
@@ -1089,10 +1098,12 @@ class EditorApp(tk.Tk):
 
     def _refresh_item_choices(self):
         cat = self.inv_type_var.get()
+        self.add_ammo_check.state(["!disabled" if cat == "weapon" else "disabled"])
+        if cat != "weapon":
+            self.add_ammo_var.set(False)
         names = [n for n, _t in self.cat.get(cat, [])]
         self.inv_item_cb["values"] = names
-        if names:
-            self.inv_item_var.set(names[0])
+        self.inv_item_var.set(names[0] if names else "")
 
     # -- faction tab -------------------------------------------------------
     def _build_faction_tab(self):
@@ -1133,8 +1144,11 @@ class EditorApp(tk.Tk):
     def _refresh_factions(self):
         self.rep_var.set(str(self.save.reputation))
         self.faction_tree.delete(*self.faction_tree.get_children())
-        for i, f in enumerate(self.save.factions()):
+        factions = self.save.factions()
+        for i, f in enumerate(factions):
             self.faction_tree.insert("", "end", iid=str(i), values=(f.name, f.standing))
+        if not any(f.name.casefold() == "comstar" for f in factions):
+            self.faction_tree.insert("", "end", iid="comstar", values=("ComStar", _("Not recorded")))
 
     def on_set_reputation(self):
         if not self._guard():
@@ -1158,17 +1172,28 @@ class EditorApp(tk.Tk):
         sel = self.faction_tree.selection()
         if not sel:
             return self._need_selection()
-        idx = int(sel[0])
-        f = self.save.factions()[idx]
-        new = simpledialog.askinteger(_('Edit standing'), _('Standing for {p0}:', p0=f.name),
-                                      initialvalue=f.standing, minvalue=-1000, maxvalue=1000,
+        row = sel[0]
+        faction = None if row == "comstar" else self.save.factions()[int(row)]
+        name = faction.name if faction is not None else "ComStar"
+        new = simpledialog.askinteger(_('Edit standing'), _('Standing for {p0}:', p0=name),
+                                      initialvalue=faction.standing if faction is not None else 0,
+                                      minvalue=-1000, maxvalue=1000,
                                       parent=self)
         if new is None:
             return
-        f.standing = new
+        try:
+            if name.casefold() == "comstar":
+                self.save.set_comstar_standing(new)
+            else:
+                faction.standing = new
+        except ValueError as exc:
+            return self._error(_('Faction edit failed'), exc)
         self._refresh_factions()
-        self.faction_tree.selection_set(str(idx))
-        self.status.set(_('Set {p0} standing to {p1}. Remember to Save.', p0=f.name, p1=new))
+        if row == "comstar":
+            row = str(len(self.save.factions()) - 1)
+        self.faction_tree.selection_set(row)
+        self.faction_tree.see(row)
+        self.status.set(_('Set {p0} standing to {p1}. Remember to Save.', p0=name, p1=new))
 
     def on_set_all_factions(self, value):
         if not self._guard():
@@ -1277,6 +1302,192 @@ class EditorApp(tk.Tk):
             return messagebox.showerror(_('Cantina edit not applied'), str(exc), parent=self)
         self.status.set(_('Added {p0} missing Cantina upgrade unlocks. Save As a test copy.', p0=count))
 
+    def _build_progress_tab(self):
+        tabs = ttk.Notebook(self.progress_tab)
+        tabs.pack(fill="both", expand=True, padx=4, pady=4)
+        quests = ttk.Frame(tabs)
+        rivals = ttk.Frame(tabs)
+        tabs.add(quests, text=_('Quest log (experimental)'))
+        tabs.add(rivals, text=_('Arena and Rivals'))
+
+        ttk.Label(quests, wraplength=680, style="Muted.TLabel", text=_(
+            'Test on a Save As copy. Completion edits move saved objectives between Active and Completed. '
+            'Campaign events, rewards and mission replay require in-game testing.'
+        )).pack(anchor="w", padx=6, pady=6)
+        self.quest_info = tk.StringVar(value=_('Open a save to view its progress.'))
+        ttk.Label(quests, textvariable=self.quest_info, wraplength=680).pack(anchor="w", padx=6)
+        self.quest_tree = self._progress_tree(quests, (
+            ("title", _('Quest name'), 470), ("state", _('Status'), 135),
+        ))
+        self.quest_tree.column("state", stretch=False)
+        quest_actions = ttk.Frame(quests)
+        quest_actions.pack(fill="x", padx=6, pady=(0, 6))
+        self.quest_completed_var = tk.BooleanVar(value=False)
+        self.quest_check = ttk.Checkbutton(quest_actions, text=_('Completed'),
+                                           variable=self.quest_completed_var,
+                                           command=self._toggle_quest, state="disabled")
+        self.quest_check.pack(side="left")
+        self.quest_id_var = tk.StringVar()
+        ttk.Label(quest_actions, textvariable=self.quest_id_var, style="Muted.TLabel").pack(
+            side="left", padx=(12, 0))
+        self.quest_tree.bind("<<TreeviewSelect>>", lambda event: self._select_quest())
+        self._quest_states = {}
+
+        self._point_controls = {}
+        for track, title in (("arena", _('Arena Fame')), ("rival", _('Rival Intel'))):
+            frame = ttk.LabelFrame(rivals, text=title)
+            frame.pack(fill="x", padx=6, pady=(4, 0))
+            value = tk.StringVar(value=_('Open a save to view its progress.'))
+            ttk.Label(frame, textvariable=value, wraplength=400).pack(side="left", padx=6, pady=4)
+            buttons = []
+            for level, label in ((False, _('Set points')), (True, _('Set stock level'))):
+                button = ttk.Button(frame, text=label, state="disabled",
+                                    command=lambda t=track, l=level: self._edit_progress_points(t, l))
+                button.pack(side="left", padx=4, pady=4)
+                buttons.append(button)
+            self._point_controls[track] = (title, value, buttons)
+        self.rival_info = tk.StringVar(value=_('Open a save to view its progress.'))
+        ttk.Label(rivals, textvariable=self.rival_info, wraplength=680).pack(anchor="w", padx=6, pady=(6, 0))
+        self.rival_tree = self._progress_tree(rivals, (
+            ("rival", _('Rival company'), 340), ("encountered", _('Encountered'), 128),
+            ("defeated", _('Defeated'), 110),
+        ))
+        self.rival_encountered_var = tk.BooleanVar(value=False)
+        self.rival_check = ttk.Checkbutton(rivals, text=_('Encountered'),
+                                           variable=self.rival_encountered_var,
+                                           command=self._toggle_rival, state="disabled")
+        self.rival_check.pack(anchor="w", padx=6, pady=(0, 6))
+        self.rival_tree.bind("<<TreeviewSelect>>", lambda event: self._select_rival())
+        self._rival_states = {}
+
+    def _progress_tree(self, parent, columns):
+        frame = ttk.Frame(parent)
+        frame.pack(fill="both", expand=True, padx=6, pady=4)
+        tree = ttk.Treeview(frame, columns=[key for key, _, _ in columns],
+                            show="headings", selectmode="browse", height=8)
+        for key, label, width in columns:
+            tree.heading(key, text=label)
+            tree.column(key, width=width)
+        scrollbar = ttk.Scrollbar(frame, command=tree.yview)
+        tree.configure(yscrollcommand=scrollbar.set)
+        tree.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        return tree
+
+    def _refresh_progress(self):
+        for track, (_title, label, buttons) in self._point_controls.items():
+            try:
+                points = progression.points(self.save, track)
+                label.set(_('{p0:,} points · stock level {p1}', p0=points,
+                            p1=progression.stock_level(track, points)))
+                enabled = True
+            except (KeyError, ValueError, EOFError):
+                label.set(_('No supported progress record in this save.'))
+                enabled = False
+            for button in buttons:
+                button.configure(state="normal" if enabled else "disabled")
+
+        selected = self.quest_tree.selection()
+        self.quest_tree.delete(*self.quest_tree.get_children())
+        try:
+            self._quest_states = dict(progression.quest_states(self.save))
+            self.quest_info.set(_('Select a saved objective to change its completion state.')
+                                if self._quest_states else _('No active or completed objectives in this save.'))
+        except (KeyError, ValueError, EOFError) as exc:
+            self._quest_states = {}
+            self.quest_info.set(_('Quest log unavailable: {p0}', p0=exc))
+        titles = {name: progression.quest_title(name, i18n.get_language()) for name in self._quest_states}
+        for name in sorted(titles, key=lambda asset: (titles[asset].casefold(), asset.casefold())):
+            state = _('Completed') if self._quest_states[name] else _('Active')
+            self.quest_tree.insert("", "end", iid=name, values=(titles[name], state))
+        if selected and selected[0] in self._quest_states:
+            self.quest_tree.selection_set(selected)
+            self.quest_tree.see(selected[0])
+        self._select_quest()
+
+        selected = self.rival_tree.selection()
+        self.rival_tree.delete(*self.rival_tree.get_children())
+        try:
+            self._rival_states = {name: (encountered, defeated)
+                                  for name, encountered, defeated in progression.rival_states(self.save)}
+            self.rival_info.set(_('Select a rival to edit its encounter record. Defeat history is shown separately.'))
+        except (KeyError, ValueError, EOFError) as exc:
+            self._rival_states = {}
+            self.rival_info.set(_('Rival records unavailable: {p0}', p0=exc))
+        for name in sorted(self._rival_states, key=lambda asset: progression.RIVALS.get(asset, asset).casefold()):
+            encountered, defeated = self._rival_states[name]
+            self.rival_tree.insert("", "end", iid=name, values=(
+                progression.RIVALS.get(name, name),
+                _('Yes') if encountered else _('No'),
+                _('Yes') if defeated else _('No'),
+            ))
+        if selected and selected[0] in self._rival_states:
+            self.rival_tree.selection_set(selected)
+            self.rival_tree.see(selected[0])
+        self._select_rival()
+
+    def _select_quest(self):
+        selected = self.quest_tree.selection()
+        self.quest_check.configure(state="normal" if selected else "disabled")
+        self.quest_completed_var.set(self._quest_states[selected[0]] if selected else False)
+        self.quest_id_var.set(_('Objective ID: {p0}', p0=selected[0]) if selected else "")
+
+    def _select_rival(self):
+        selected = self.rival_tree.selection()
+        self.rival_check.configure(state="normal" if selected else "disabled")
+        self.rival_encountered_var.set(self._rival_states[selected[0]][0] if selected else False)
+
+    def _toggle_quest(self):
+        selected = self.quest_tree.selection()
+        if not selected:
+            return
+        name = selected[0]
+        title = progression.quest_title(name, i18n.get_language())
+        completed = self.quest_completed_var.get()
+        prompt = (_('Mark {p0} completed in the saved quest log?', p0=title) if completed
+                  else _('Move {p0} back to the active quest log?', p0=title))
+        if not messagebox.askyesno(_('Experimental quest edit'), prompt, parent=self):
+            return self._select_quest()
+        try:
+            progression.set_quest_completed(self.save, name, completed)
+        except (KeyError, ValueError, EOFError) as exc:
+            self._select_quest()
+            return self._error(_('Quest edit failed'), exc)
+        self._refresh_progress()
+        self.status.set(_('Updated {p0}. Save As a test copy.', p0=title))
+
+    def _toggle_rival(self):
+        selected = self.rival_tree.selection()
+        if not selected:
+            return
+        name = selected[0]
+        try:
+            progression.set_encountered(self.save, name, self.rival_encountered_var.get())
+        except (KeyError, ValueError, EOFError) as exc:
+            self._select_rival()
+            return self._error(_('Rival edit failed'), exc)
+        self._refresh_progress()
+        self.status.set(_('Updated {p0}. Save As a test copy.', p0=progression.RIVALS.get(name, name)))
+
+    def _edit_progress_points(self, track, by_level):
+        title = self._point_controls[track][0]
+        points = progression.points(self.save, track)
+        value = simpledialog.askinteger(
+            title, _('Stock level (0–10):') if by_level else _('Points:'),
+            initialvalue=progression.stock_level(track, points) if by_level else points,
+            minvalue=0, maxvalue=10 if by_level else 2147483647, parent=self)
+        if value is None:
+            return
+        try:
+            if by_level:
+                progression.set_level(self.save, track, value)
+            else:
+                progression.set_points(self.save, track, value)
+        except (KeyError, ValueError) as exc:
+            return self._error(_('Progress edit failed'), exc)
+        self._refresh_progress()
+        self.status.set(_('Updated {p0}. Save As a test copy.', p0=title))
+
     def _build_item_catalog(self):
         """Merge the built-in item lists with everything the loaded save
         references, so rare/DLC gear the player has encountered is selectable.
@@ -1318,6 +1529,7 @@ class EditorApp(tk.Tk):
             self._refresh_inventory()
             self._refresh_factions()
             self._refresh_cantina()
+            self._refresh_progress()
             self.status.set(_('Loaded {p0} — {p1} mechs, {p2} pilots, {p3:,} C-Bills. {p4}', p0=os.path.basename(path), p1=len(self.save.mechs()), p2=len(self.save.pilots()), p3=self.save.cbills, p4=backup_status))
         except Exception as e:
             self._error(_('Failed to open save'), e)
@@ -2061,12 +2273,47 @@ class EditorApp(tk.Tk):
                           "equipment": "MWHeatSinkDataAsset",
                           "ammo": "MWAmmoDataAsset"}[cat]
         inv = CATEGORY_INVENTORY[cat]
+        ammo = None
+        if cat == "weapon" and self.add_ammo_var.get():
+            if not 1 <= count <= 2147483647:
+                return messagebox.showerror(_('Invalid'), _('Enter a positive weapon count.'), parent=self)
+            ammo = self._pick_weapon_ammo(name, count)
+            if ammo is None:
+                return
         try:
-            self.save.add_item(inv, asset_type, name, count)
+            if ammo is None:
+                self.save.add_item(inv, asset_type, name, count)
+                status = _('Added {p0}x {p1}. Remember to Save.', p0=count, p1=name)
+            else:
+                ammo_name, ammo_count = ammo
+                self.save.add_weapon_with_ammo(asset_type, name, count, ammo_name, ammo_count)
+                status = _('Added {p0}x {p1} and {p2}x {p3}. Remember to Save.',
+                           p0=count, p1=name, p2=ammo_count, p3=ammo_name)
             self._refresh_inventory()
-            self.status.set(_('Added {p0}x {p1}. Remember to Save.', p0=count, p1=name))
+            self.status.set(status)
         except Exception as e:
             self._error(_('Failed to add item'), e)
+
+    def _pick_weapon_ammo(self, weapon_name, weapon_count):
+        available = [name for name, kind in self.cat.get("ammo", []) if kind == "MWAmmoDataAsset"]
+        if not available:
+            messagebox.showinfo(_('Choose ammo'), _('No ammo is available in the current catalog.'), parent=self)
+            return None
+        matches = matching_ammo(weapon_name, available)
+        manual = _('Choose ammo manually…')
+        if matches:
+            choice = SearchChoiceDialog(self, _('Choose matching ammo'), [*matches, manual]).result
+        else:
+            choice = manual if messagebox.askyesno(
+                _('Choose ammo'), _('No stock ammo match was found. Choose a compatible ammo bin manually?'),
+                parent=self) else None
+        if choice == manual:
+            choice = SearchChoiceDialog(self, _('Choose ammo'), available).result
+        if choice is None:
+            return None
+        count = simpledialog.askinteger(_('Ammo count'), _('Number of {p0} bins:', p0=choice),
+                                        initialvalue=min(weapon_count, 9999), minvalue=1, maxvalue=9999, parent=self)
+        return (choice, count) if count is not None else None
 
     def _selected_inv_rows(self):
         rows = []

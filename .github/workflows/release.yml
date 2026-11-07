@@ -69,6 +69,8 @@ jobs:
             --include-data-files=editor/app_icon.ico=app_icon.ico `
             --include-data-files=editor/app_icon.png=app_icon.png `
             --include-data-files=editor/item_catalog.json.gz=item_catalog.json.gz `
+            --include-data-files=editor/weapon_ammo.json=weapon_ammo.json `
+            --include-data-files=editor/quest_titles.json=quest_titles.json `
             --include-data-files=editor/mech_catalog.json.gz=mech_catalog.json.gz `
             --include-data-files=editor/trait_catalog.json.gz=trait_catalog.json.gz `
             --include-data-files=editor/pilot_catalog.json.gz=pilot_catalog.json.gz `

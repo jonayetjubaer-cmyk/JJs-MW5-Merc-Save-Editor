@@ -1288,6 +1288,42 @@ def _new_struct_property(name: str, struct_name: str,
     )
 
 
+def _new_struct_array(name: str, struct_name: str) -> Property:
+    header = Writer()
+    header.i64(0)
+    header.fstring("StructProperty")
+    return Property(
+        name, "ArrayProperty", header.bytes(), b"",
+        ArrayValue("StructProperty", 0, inner_tag_name=name,
+                   inner_struct_name=struct_name, inner_struct_guid=bytes(16),
+                   elements_leading_byte=b"\x00"),
+        array_leading_byte=b"\x00",
+    )
+
+
+def _checked_struct_array(prop: Property, struct_name: str) -> ArrayValue:
+    array = prop.decoded
+    if (prop.type != "ArrayProperty" or not isinstance(array, ArrayValue)
+            or array.element_type != "StructProperty" or array.inner_struct_name != struct_name
+            or array.count != len(array.elements)
+            or any(not isinstance(el, PropertyList) for el in array.elements)):
+        raise ValueError(f"Unsupported {prop.name} array layout.")
+    return array
+
+
+def _new_asset_id(name: str, struct_name: str, asset_type: str, asset_name: str) -> Property:
+    primary_type = _new_struct_property("PrimaryAssetType", "PrimaryAssetType", [
+        _new_scalar_property("Name", "NameProperty", write_fstring_payload(asset_type)),
+    ])
+    return _new_struct_property(name, struct_name, [
+        _new_struct_property("ID", "PrimaryAssetId", [
+            primary_type,
+            _new_scalar_property("PrimaryAssetName", "NameProperty",
+                                 write_fstring_payload(asset_name)),
+        ]),
+    ])
+
+
 def _new_guid_property(name: str) -> Property:
     w = Writer()
     w.i64(16)
@@ -2372,12 +2408,62 @@ class SaveFile:
                 arr.count -= 1
                 break
 
+    def add_weapon_with_ammo(self, weapon_type: str, weapon_name: str, weapon_count: int,
+                             ammo_name: str, ammo_count: int):
+        """Add both items together, restoring the inventory if either addition fails."""
+        if not weapon_name or not ammo_name or min(weapon_count, ammo_count) < 1:
+            raise ValueError("Weapon and ammo names and positive counts are required.")
+        model = self.model("InventoryModel")
+        before = copy.deepcopy(model.plist)
+        try:
+            self.add_item("weapon", weapon_type, weapon_name, weapon_count)
+            self.add_item("equipment", "MWAmmoDataAsset", ammo_name, ammo_count)
+        except Exception:
+            model.plist = before
+            raise
+
     # -- factions / reputation --------------------------------------------
     def factions(self) -> list[FactionStanding]:
         mc = self.model("MercCompanyModel").plist
-        fsl = mc.get("FactionStandingList")
-        arr = fsl.decoded.get("Standings").decoded
+        standings = _path(mc, "FactionStandingList", "Standings")
+        if standings is None:
+            return []
+        arr = _checked_struct_array(standings, "FactionStanding")
         return [FactionStanding(el) for el in arr.elements]
+
+    def set_comstar_standing(self, value: int):
+        """Create the stock faction entry on demand using the native list layout."""
+        payload = write_int(value)
+        mc = self.model("MercCompanyModel").plist
+        wrapper = mc.get("FactionStandingList")
+        if wrapper is None:
+            wrapper = _new_struct_property("FactionStandingList", "FactionStandingList", [])
+        elif wrapper.type != "StructProperty" or not isinstance(wrapper.decoded, PropertyList):
+            raise ValueError("Unsupported faction standing list.")
+        standings = wrapper.decoded.get("Standings")
+        if standings is None:
+            standings = _new_struct_array("Standings", "FactionStanding")
+        array = _checked_struct_array(standings, "FactionStanding")
+        for el in array.elements:
+            faction = FactionStanding(el)
+            if faction.name.casefold() == "comstar":
+                standing = el.get("Standing")
+                if standing is None:
+                    el.properties.append(_int_property("Standing", value))
+                elif standing.type == "IntProperty" and len(standing.raw_payload) == 4:
+                    _set_leaf(standing, payload)
+                else:
+                    raise ValueError("Unsupported ComStar standing value.")
+                return
+        array.elements.append(PropertyList([
+            _new_asset_id("Faction", "FactionAssetId", "MWFactionAsset", "ComStar"),
+            _int_property("Standing", value),
+        ]))
+        array.count = len(array.elements)
+        if wrapper.decoded.get("Standings") is None:
+            wrapper.decoded.properties.append(standings)
+        if mc.get("FactionStandingList") is None:
+            mc.properties.append(wrapper)
 
     @property
     def reputation(self) -> int:

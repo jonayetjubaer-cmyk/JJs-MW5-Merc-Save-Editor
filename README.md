@@ -17,10 +17,8 @@ Maintained and published by **Jonaex LTD**.
 
 **[Download the latest version from the Releases page](../../releases/latest)**
 
-Grab `JJsaveEditor.exe`, double-click it, and you're in. No install, no Python,
-nothing else needed.
-
-> The first launch takes a few seconds (the app unpacks itself). That's normal.
+Extract the full ZIP and run `JJsaveEditor.exe` from the extracted folder.
+No installer or Python is required.
 
 ---
 
@@ -34,10 +32,13 @@ nothing else needed.
   character; add brand-new pilots or remove them. Arrange the saved roster with
   **Move Up / Down / Top / Bottom**, keeping player/commander slots fixed.
 - **Inventory** — add weapons, equipment, and ammo (with searchable lists), set
-  counts, or remove items.
+  counts, or remove items. Use **Add ammo with weapon** to add matching bins.
 - **C-Bills** — set your money to anything (one-click max).
-- **Factions** — edit your standing with all 17 factions and your company
-  reputation.
+- **Factions** — edit saved faction standings and company reputation. Editing
+  the ComStar row adds a standing entry when one is missing.
+- **Progress** — edit Arena Fame, Rival Intel, and rival encounters. The
+  experimental quest log shows in-game objective titles and can move saved
+  objectives between Active and Completed. Test quest changes on a Save As copy.
 - **Cantina (experimental)** — edit points/tiers for all five built-in career
   paths, including not-started paths, and unlock their corresponding mech
   upgrades. **Sync upgrade unlocks** repairs missing rewards from earlier edits
