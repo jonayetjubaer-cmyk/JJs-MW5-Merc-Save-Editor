@@ -161,6 +161,50 @@ blob (with a fresh GUID + desired MechDataAssetId/skin/armor/weapons), AND
 write that same fresh GUID into an empty `MechStorageList` slot in
 MechStorageModel. Two writes, one shared GUID, both inside PersistentModelData.
 
+### CONFIRMED: mech refit work orders and their payload
+
+In `TimelineModel.SavedTimelineEventData`, entries whose `TimelineEventClass`
+is `MechRefitTimelineEvent` are mech work orders. The save examined has 12 such
+entries (the array has 16 total events, including pilot recovery, finance, and
+mission events). Each event's `EventData.EventId.ID` identifies it, and
+`EventData.ExecutionDate` is its scheduled completion date. The mech variant is
+at:
+
+```
+ComponentSaveData : ArrayProperty<ByteProperty>
+└─ [int32 byte count][tagged-property archive][4-byte footer]
+   └─ WorkOrderItemMech
+      └─ ItemData.MechDataAssetId.ID.PrimaryAssetName
+```
+
+`ExecutionDate` is an 8-byte `DateTime` struct stored as signed 100-nanosecond
+ticks from `0001-01-01`. The editor displays the difference between
+`ExecutionDate`'s calendar day and the current in-game campaign date as
+"days remaining". Editing a positive whole-number day count converts it back to
+an absolute calendar day while preserving the existing time-of-day ticks.
+Mission-launch timeline events are also shown in the Work Orders view as
+read-only markers (with the current event identified), so they provide timeline
+context without being selectable or editable as refits.
+
+### IMPORTANT: preserve the current event in `OrderedTimelineEvents`
+
+The timeline also stores `OrderedTimelineEvents`, an array of event-ID structs
+(`ID : IntProperty`). `CurrentEvent.ID` is pinned at the head of this array;
+the remaining IDs are ordered by their corresponding
+`SavedTimelineEventData.EventData.ExecutionDate`. All inspected refit events still have `bIsEventQueued = true`.
+
+Thus changing `ExecutionDate` alone does not make an event the active timeline
+event. The save suggests the current event may gate when the game processes
+later queued events, though the exact runtime dispatch behavior cannot be
+confirmed from serialized data alone. When an editor date changes, it should
+preserve the current event at the head and re-sort only the remaining queue.
+
+There is a mech link as well: for each inspected refit, the GUID in
+`ComponentSaveData.RefitMechId.Value` matches both
+`ComponentSaveData.WorkOrderItemMech.ItemId.Value` and the GUID of the
+corresponding `SaveStateModel.MechLoadoutWrappers` entry. The wrapper's mech
+record contains the mech/loadout data, not a second completion date.
+
 ### CRITICAL GOTCHA: every nested archive has a 4-byte FOOTER after "None"
 
 Discovered the hard way: first injection attempt produced a save that loaded

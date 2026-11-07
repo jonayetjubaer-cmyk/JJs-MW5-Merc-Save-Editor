@@ -7,6 +7,7 @@ Run:  python gui.py
 """
 from __future__ import annotations
 
+import datetime
 import json
 import os
 import random
@@ -332,16 +333,19 @@ class EditorApp(tk.Tk):
         self.inv_tab = ttk.Frame(self.nb)
         self.faction_tab = ttk.Frame(self.nb)
         self.cantina_tab = ttk.Frame(self.nb)
+        self.work_order_tab = ttk.Frame(self.nb)
         self.nb.add(self.mech_tab, text=_('Mechs'))
         self.nb.add(self.pilot_tab, text=_('Pilots'))
         self.nb.add(self.inv_tab, text=_('Inventory'))
         self.nb.add(self.faction_tab, text=_('Factions'))
         self.nb.add(self.cantina_tab, text=_('Cantina (experimental)'))
+        self.nb.add(self.work_order_tab, text=_('Work Orders'))
         self._build_mech_tab()
         self._build_pilot_tab()
         self._build_inventory_tab()
         self._build_faction_tab()
         self._build_cantina_tab()
+        self._build_work_order_tab()
 
         self.status = tk.StringVar(value=_("Open a .sav file to begin."))
         ttk.Label(self, textvariable=self.status, relief="sunken",
@@ -1225,6 +1229,191 @@ class EditorApp(tk.Tk):
         for button in self._cantina_buttons:
             button.configure(state="normal" if self._cantina_paths else "disabled")
 
+    def _build_work_order_tab(self):
+        ttk.Label(
+            self.work_order_tab,
+            text=_("Mech refit work orders, sorted by scheduled completion. Use Ctrl+Click or Shift+Click to select multiple rows, then edit their days remaining together."),
+            style="Muted.TLabel",
+            wraplength=760,
+        ).pack(anchor="w", padx=8, pady=8)
+        wrap = ttk.Frame(self.work_order_tab)
+        wrap.pack(fill="both", expand=True, padx=8, pady=(0, 8))
+        columns = ("mech", "days_remaining")
+        self.work_order_tree = ttk.Treeview(
+            wrap, columns=columns, show="headings", selectmode="extended")
+        for column, label, width in (
+            ("mech", "Mech", 260),
+            ("days_remaining", "Days remaining", 140),
+        ):
+            self.work_order_tree.heading(column, text=_(label))
+            self.work_order_tree.column(column, width=width)
+        scrollbar = ttk.Scrollbar(wrap, orient="vertical",
+                                  command=self.work_order_tree.yview)
+        self.work_order_tree.configure(yscrollcommand=scrollbar.set)
+        self.work_order_tree.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        self.work_order_tree.bind("<Double-Button-1>", self._on_work_order_double_click)
+        self.work_order_tree.bind("<Button-1>", self._on_work_order_click)
+        self.work_order_tree.bind("<Control-Button-1>", self._on_work_order_click)
+        self.work_order_tree.bind("<Shift-Button-1>", self._on_work_order_click)
+        self.work_order_tree.bind("<Control-Shift-Button-1>", self._on_work_order_click)
+        self.work_order_tree.bind("<<TreeviewSelect>>", self._on_work_order_selection)
+        actions = ttk.Frame(self.work_order_tab)
+        actions.pack(fill="x", padx=8, pady=(0, 8))
+        ttk.Button(actions, text=_("Edit Days Remaining…"),
+                   command=self.on_edit_work_order_date).pack(side="left")
+        self._work_orders_by_index = {}
+        self._work_order_readonly_rows = set()
+
+    def _refresh_work_orders(self):
+        self.work_order_tree.delete(*self.work_order_tree.get_children())
+        self._work_orders_by_index = {}
+        self._work_order_readonly_rows = set()
+        if self.save is None:
+            return
+        rows = []
+        for order in self.save.work_orders():
+            self._work_orders_by_index[order.event_index] = order
+            mech = order.mech_asset[:-4] if order.mech_asset.endswith("_MDA") else order.mech_asset
+            days_remaining = (order.execution_date - self.save.campaign_date).days
+            days_text = (_("1 day") if days_remaining == 1
+                         else _("{p0} days", p0=days_remaining))
+            rows.append((order.execution_date, order.event_index, str(order.event_index),
+                         (mech, days_text), False))
+        for marker in self.save.mission_launch_events():
+            row_id = f"timeline-{marker.event_index}"
+            label = _("Mission launch (current)") if marker.is_current else _("Mission launch")
+            days_remaining = (marker.execution_date - self.save.campaign_date).days
+            days_text = (_("1 day") if days_remaining == 1
+                         else _("{p0} days", p0=days_remaining))
+            rows.append((marker.execution_date, marker.event_index, row_id,
+                         (label, days_text), True))
+
+        for _scheduled_date, _event_index, row_id, values, is_readonly in sorted(
+                rows, key=lambda row: (row[0], row[1])):
+            self.work_order_tree.insert(
+                "", "end", iid=row_id, values=values,
+                tags=("timeline_marker",) if is_readonly else ())
+            if is_readonly:
+                self._work_order_readonly_rows.add(row_id)
+        self.work_order_tree.tag_configure(
+            "timeline_marker", foreground="#d32f2f", background="#e5e5e5")
+
+    def _on_work_order_click(self, event):
+        row = self.work_order_tree.identify_row(event.y)
+        if row in self._work_order_readonly_rows:
+            return "break"
+
+    def _on_work_order_selection(self, _event=None):
+        selected_markers = [
+            row_id for row_id in self.work_order_tree.selection()
+            if row_id in self._work_order_readonly_rows
+        ]
+        if selected_markers:
+            self.work_order_tree.selection_remove(*selected_markers)
+
+    def _on_work_order_double_click(self, event):
+        row = self.work_order_tree.identify_row(event.y)
+        if row in self._work_order_readonly_rows:
+            self.work_order_tree.selection_remove(row)
+        elif row:
+            self.work_order_tree.selection_set(row)
+            self.on_edit_work_order_date()
+        return "break"
+
+    def on_edit_work_order_date(self):
+        if not self._guard():
+            return
+        selected = self.work_order_tree.selection()
+        if not selected:
+            return self._need_selection()
+        orders = [
+            self._work_orders_by_index.get(int(event_index))
+            for event_index in selected
+            if event_index not in self._work_order_readonly_rows
+        ]
+        if (len(orders) != len(selected)
+                or any(order is None for order in orders)):
+            return self._need_selection()
+        orders = [order for order in orders if order is not None]
+        order_count = len(orders)
+        current_date = self.save.campaign_date
+        dialog = tk.Toplevel(self)
+        dialog.title(_("Edit days remaining"))
+        dialog.transient(self)
+        dialog.resizable(False, False)
+        dialog.columnconfigure(1, weight=1)
+
+        row = 0
+        if order_count > 1:
+            ttk.Label(
+                dialog,
+                text=_("One days-remaining value will be applied to all {p0} selected work orders.",
+                       p0=order_count),
+            ).grid(row=row, column=0, columnspan=2, sticky="w",
+                   padx=12, pady=6)
+            row += 1
+        ttk.Label(dialog, text=_("Days remaining")).grid(
+            row=row, column=0, sticky="w", padx=(12, 8), pady=6)
+        days_remaining_var = tk.StringVar(
+            dialog, value=str((orders[0].execution_date - current_date).days))
+        ttk.Entry(dialog, textvariable=days_remaining_var, width=18).grid(
+            row=row, column=1, sticky="ew", padx=(0, 12), pady=6)
+        actions = ttk.Frame(dialog)
+        actions.grid(row=row + 1, column=0, columnspan=2, sticky="e",
+                     padx=12, pady=(6, 12))
+
+        def apply_date():
+            try:
+                days_remaining = int(days_remaining_var.get().strip())
+            except ValueError:
+                return messagebox.showerror(
+                    _("Invalid"), _("Enter a positive whole number of days."),
+                    parent=dialog)
+            if days_remaining < 1:
+                return messagebox.showerror(
+                    _("Invalid"), _("Days remaining must be at least 1."),
+                    parent=dialog)
+            try:
+                completion_date = current_date + datetime.timedelta(days=days_remaining)
+                for order in orders:
+                    self.save.set_work_order_execution_date(
+                        order, completion_date.isoformat(), current_date=current_date)
+            except (ValueError, OverflowError) as exc:
+                message = str(exc)
+                if message.startswith("Completion date must be at least one day"):
+                    message = _("Completion date must be at least one day after the current in-game date ({p0}).",
+                                p0=current_date.isoformat())
+                elif isinstance(exc, OverflowError):
+                    message = _("Days remaining is outside the supported date range.")
+                return messagebox.showerror(_("Invalid"), message, parent=dialog)
+            dialog.destroy()
+            self._refresh_work_orders()
+            self.work_order_tree.selection_set(*selected)
+            self.status.set(_(
+                "Set days remaining for {p0} work orders to {p1}. Remember to Save.",
+                p0=order_count, p1=days_remaining))
+
+        ttk.Button(actions, text=_("Apply"), command=apply_date).pack(side="left")
+        ttk.Button(actions, text=_("Cancel"), command=dialog.destroy).pack(
+            side="left", padx=(6, 0))
+        dialog.bind("<Return>", lambda _event: apply_date())
+        dialog.bind("<Escape>", lambda _event: dialog.destroy())
+        dialog.update_idletasks()
+        width = dialog.winfo_width()
+        height = dialog.winfo_height()
+        x = max(0, (dialog.winfo_screenwidth() - width) // 2)
+        y = max(0, (dialog.winfo_screenheight() - height) // 2)
+        dialog.geometry(f"+{x}+{y}")
+        dialog.update_idletasks()
+        x += round(dialog.winfo_screenwidth() / 2
+                   - (dialog.winfo_rootx() + dialog.winfo_width() / 2))
+        y += round(dialog.winfo_screenheight() / 2
+                   - (dialog.winfo_rooty() + dialog.winfo_height() / 2))
+        dialog.geometry(f"+{max(0, x)}+{max(0, y)}")
+        dialog.grab_set()
+        dialog.wait_window()
+
     def _edit_cantina(self, by_tier):
         selection = self.cantina_tree.selection()
         if not selection:
@@ -1318,6 +1507,7 @@ class EditorApp(tk.Tk):
             self._refresh_inventory()
             self._refresh_factions()
             self._refresh_cantina()
+            self._refresh_work_orders()
             self.status.set(_('Loaded {p0} — {p1} mechs, {p2} pilots, {p3:,} C-Bills. {p4}', p0=os.path.basename(path), p1=len(self.save.mechs()), p2=len(self.save.pilots()), p3=self.save.cbills, p4=backup_status))
         except Exception as e:
             self._error(_('Failed to open save'), e)

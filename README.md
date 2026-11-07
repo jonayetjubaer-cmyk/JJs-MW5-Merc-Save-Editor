@@ -38,6 +38,11 @@ nothing else needed.
 - **C-Bills** — set your money to anything (one-click max).
 - **Factions** — edit your standing with all 17 factions and your company
   reputation.
+- **Work Orders** — view mech refit jobs sorted by scheduled completion, with
+  their remaining days shown relative to the current in-game date. Use
+  Ctrl+Click or Shift+Click to select multiple jobs and set the same positive
+  whole-number day count for all of them; enter `1` for the next in-game day.
+  Mission-launch timeline entries are shown as read-only markers.
 - **Cantina (experimental)** — edit points/tiers for all five built-in career
   paths, including not-started paths, and unlock their corresponding mech
   upgrades. **Sync upgrade unlocks** repairs missing rewards from earlier edits
@@ -65,7 +70,8 @@ nothing else needed.
 2. Open `JJsaveEditor.exe`.
 3. Click **Open…** — it points straight at your MW5 saves folder
    (`%LOCALAPPDATA%\MW5Mercs\Saved\SaveGames`).
-4. Edit what you like across the **Mechs / Pilots / Inventory / Factions** tabs.
+4. Edit what you like across the **Mechs / Pilots / Inventory / Factions /
+   Work Orders** tabs.
    In **Pilots**, the move buttons change the saved roster order. Apply/Set any
    field edits before saving. The editor retains the new order after reloading;
    the game's deployment-screen order still needs confirmation.
