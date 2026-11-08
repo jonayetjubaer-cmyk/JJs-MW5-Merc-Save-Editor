@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.21.0
+- Added a **Progress** tab with an experimental quest log ([#46](../../issues/46)).
+  It shows in-game titles for 512 stock objectives and uses the game's
+  translations where available. Select an objective to see its ID and change
+  its saved completion status. Clearing completion moves it to Active.
+  Campaign triggers, rewards, full quest resets, and replay need separate
+  in-game validation. Use **Save As** to test on a copy.
+- Edit **Arena Fame** and **Rival Intel** by points or stock level, and toggle
+  recorded rival encounters while preserving defeat history ([#47](../../issues/47)).
+- **ComStar** appears in Factions even when the save has no standing for it.
+  Editing that row creates the standing entry. The stock entry works without
+  Scarab.
+- **Add ammo with weapon** in Inventory offers compatible ammo bins for 573
+  stock weapon assets. Choose the ammo quantity, or pick an ammo bin manually
+  for a modded weapon. Both items are added together.
+
 ## v1.20.0
 - **Publisher metadata:** Windows file properties now identify **Jonaex LTD**
   as the company and copyright holder. The editor's product name is unchanged.
