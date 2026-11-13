@@ -66,7 +66,8 @@ No installer or Python is required.
 2. Open `JJsaveEditor.exe`.
 3. Click **Open…** — it points straight at your MW5 saves folder
    (`%LOCALAPPDATA%\MW5Mercs\Saved\SaveGames`).
-4. Edit what you like across the **Mechs / Pilots / Inventory / Factions** tabs.
+4. Edit what you like across the **Mechs / Pilots / Inventory / Factions /
+   Work Orders** tabs.
    In **Pilots**, the move buttons change the saved roster order. Apply/Set any
    field edits before saving. The editor retains the new order after reloading;
    the game's deployment-screen order still needs confirmation.

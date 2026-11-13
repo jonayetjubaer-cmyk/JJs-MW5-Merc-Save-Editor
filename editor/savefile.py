@@ -367,6 +367,60 @@ class WeaponSlot:
             _set_bool(self.group_element.get(f"bWeaponGroup{n}"), on)
 
 
+@dataclass
+class WorkOrder:
+    event_id: int
+    mech_asset: str
+    event_index: int
+    _execution_date_property: Property = field(repr=False)
+
+    @property
+    def execution_ticks(self) -> int:
+        return read_int64(self._execution_date_property.raw_payload)
+
+    @property
+    def execution_date(self) -> datetime.date:
+        ticks = self.execution_ticks
+        days = ticks // 864_000_000_000
+        try:
+            return datetime.date.fromordinal(days + 1)
+        except ValueError as exc:
+            raise ValueError(f"Invalid work-order ExecutionDate ticks: {ticks}") from exc
+
+    @property
+    def execution_date_text(self) -> str:
+        return self.execution_date.isoformat()
+
+    def set_execution_date_text(self, value: str, *, current_date: datetime.date | None = None):
+        text = value.strip()
+        try:
+            target = datetime.date.fromisoformat(text)
+        except ValueError as exc:
+            raise ValueError("Completion date must use YYYY-MM-DD format.") from exc
+        if target.isoformat() != text:
+            raise ValueError("Completion date must use YYYY-MM-DD format.")
+        if current_date is not None and target < current_date + datetime.timedelta(days=1):
+            raise ValueError(
+                "Completion date must be at least one day after the current in-game date "
+                f"({current_date.isoformat()})."
+            )
+
+        ticks_per_day = 864_000_000_000
+        previous_ticks = self.execution_ticks
+        ticks = (target.toordinal() - 1) * ticks_per_day + previous_ticks % ticks_per_day
+        if ticks > 0x7FFF_FFFF_FFFF_FFFF:
+            raise ValueError("Completion date is outside the save format's supported range.")
+        _set_leaf(self._execution_date_property, struct.pack("<q", ticks))
+
+
+@dataclass(frozen=True)
+class TimelineMarker:
+    event_id: int
+    event_index: int
+    execution_date: datetime.date
+    is_current: bool
+
+
 class EquipmentSlot:
     """One SlottedEquipment entry inside a mech part (Equipment.MechPartEquipment).
     Holds heat sinks, ammo, jump jets, MASC, etc. The slot's `slot_type`
@@ -1724,6 +1778,169 @@ class SaveFile:
         yet surfaced here.)"""
         return [m for m in self._all_mechs()
                 if m.loadout_type == COLD_STORAGE_LOADOUT_TYPE]
+
+    def work_orders(self) -> list[WorkOrder]:
+        """Return queued mech-refit events ordered by their scheduled completion."""
+        timeline = self.model("TimelineModel").plist
+        events = timeline.get("SavedTimelineEventData")
+        if events is None or events.decoded is None:
+            return []
+
+        work_orders = []
+        for event_index, event in enumerate(events.decoded.elements):
+            event_class = event.get("TimelineEventClass")
+            if event_class is None:
+                continue
+            class_name = read_fstring_payload(event_class.raw_payload).rsplit("/", 1)[-1]
+            if class_name.split(".", 1)[0] != "MechRefitTimelineEvent":
+                continue
+
+            event_data = event.get("EventData")
+            event_data = event_data.decoded if event_data is not None else None
+            event_id = _path(event_data, "EventId", "ID") if event_data else None
+            execution_date = event_data.get("ExecutionDate") if event_data else None
+            component_data = event.get("ComponentSaveData")
+            if event_id is None or execution_date is None or component_data is None:
+                raise ValueError(f"Incomplete mech-refit event at index {event_index}.")
+            if len(execution_date.raw_payload) != 8:
+                raise ValueError(f"Invalid ExecutionDate in mech-refit event at index {event_index}.")
+
+            component_reader = Reader(component_data.raw_payload)
+            component_length = component_reader.i32()
+            component_archive = component_reader.read(component_length)
+            component_reader.read(component_reader.remaining())
+            archive_reader = Reader(component_archive)
+            component_properties = read_property_list(archive_reader)
+            work_order_mech = component_properties.get("WorkOrderItemMech")
+            asset_property = (
+                _path(work_order_mech.decoded, "ItemData", "MechDataAssetId",
+                      "ID", "PrimaryAssetName")
+                if work_order_mech is not None and work_order_mech.decoded is not None
+                else None
+            )
+            if asset_property is None:
+                raise ValueError(f"Missing mech asset in refit event at index {event_index}.")
+
+            work_orders.append(WorkOrder(
+                event_id=read_int(event_id.raw_payload),
+                mech_asset=read_fstring_payload(asset_property.raw_payload),
+                event_index=event_index,
+                _execution_date_property=execution_date,
+            ))
+
+        return sorted(work_orders, key=lambda order: (order.execution_ticks, order.event_index))
+
+    def mission_launch_events(self) -> list[TimelineMarker]:
+        """Return mission-launch timeline entries for read-only display."""
+        timeline = self.model("TimelineModel").plist
+        events = timeline.get("SavedTimelineEventData")
+        if events is None or events.decoded is None:
+            return []
+
+        current_event_id = _path(timeline, "CurrentEvent", "ID")
+        current_event_id = read_int(current_event_id.raw_payload) if current_event_id else None
+        markers = []
+        for event_index, event in enumerate(events.decoded.elements):
+            event_class = event.get("TimelineEventClass")
+            if event_class is None:
+                continue
+            class_name = read_fstring_payload(event_class.raw_payload).rsplit("/", 1)[-1]
+            if class_name.split(".", 1)[0] != "MissionLaunchTimelineEvent":
+                continue
+
+            event_data = event.get("EventData")
+            event_data = event_data.decoded if event_data is not None else None
+            event_id = _path(event_data, "EventId", "ID") if event_data else None
+            execution_date = event_data.get("ExecutionDate") if event_data else None
+            if event_id is None or execution_date is None or len(execution_date.raw_payload) != 8:
+                raise ValueError(f"Incomplete mission-launch event at index {event_index}.")
+            ticks = read_int64(execution_date.raw_payload)
+            try:
+                event_date = datetime.date.fromordinal(
+                    ticks // 864_000_000_000 + 1)
+            except ValueError as exc:
+                raise ValueError(
+                    f"Invalid ExecutionDate in mission-launch event at index {event_index}."
+                ) from exc
+            event_id_value = read_int(event_id.raw_payload)
+            markers.append(TimelineMarker(
+                event_id=event_id_value,
+                event_index=event_index,
+                execution_date=event_date,
+                is_current=event_id_value == current_event_id,
+            ))
+
+        return sorted(markers, key=lambda marker: (marker.execution_date, marker.event_index))
+
+    def set_work_order_execution_date(
+        self,
+        order: WorkOrder,
+        value: str,
+        *,
+        current_date: datetime.date | None = None,
+    ):
+        """Change a refit's date and keep the game's ID-based timeline queue sorted."""
+        timeline = self.model("TimelineModel").plist
+        saved_events = timeline.get("SavedTimelineEventData")
+        ordered_events = timeline.get("OrderedTimelineEvents")
+        if (saved_events is None or saved_events.decoded is None
+                or ordered_events is None or ordered_events.decoded is None):
+            raise ValueError("Timeline event data or ordered event queue is missing.")
+
+        ticks_by_id = {}
+        for event in saved_events.decoded.elements:
+            event_data = event.get("EventData")
+            event_data = event_data.decoded if event_data is not None else None
+            event_id = _path(event_data, "EventId", "ID") if event_data else None
+            execution_date = event_data.get("ExecutionDate") if event_data else None
+            if event_id is None or execution_date is None or len(execution_date.raw_payload) != 8:
+                raise ValueError("Cannot sort timeline queue: an event has incomplete date data.")
+            event_id_value = read_int(event_id.raw_payload)
+            if event_id_value in ticks_by_id:
+                raise ValueError(f"Cannot sort timeline queue: duplicate event ID {event_id_value}.")
+            ticks_by_id[event_id_value] = read_int64(execution_date.raw_payload)
+
+        ordered = ordered_events.decoded
+        event_ids = []
+        for element in ordered.elements:
+            event_id = element.get("ID")
+            if event_id is None:
+                raise ValueError("Cannot sort timeline queue: an entry has no event ID.")
+            event_ids.append(read_int(event_id.raw_payload))
+        missing_ids = sorted(set(event_ids) - ticks_by_id.keys())
+        if missing_ids:
+            raise ValueError(
+                "Cannot sort timeline queue: missing event data for IDs "
+                + ", ".join(str(event_id) for event_id in missing_ids)
+                + "."
+            )
+
+        current_event_id = _path(timeline, "CurrentEvent", "ID")
+        current_element = None
+        if current_event_id is not None:
+            current_id = read_int(current_event_id.raw_payload)
+            current_matches = [
+                element for element in ordered.elements
+                if read_int(element.get("ID").raw_payload) == current_id
+            ]
+            if len(current_matches) > 1:
+                raise ValueError(
+                    f"Cannot sort timeline queue: current event ID {current_id} is duplicated."
+                )
+            if current_matches:
+                current_element = current_matches[0]
+
+        order.set_execution_date_text(value, current_date=current_date)
+        ticks_by_id[order.event_id] = order.execution_ticks
+        queued_tail = [
+            element for element in ordered.elements if element is not current_element
+        ]
+        queued_tail.sort(
+            key=lambda element: ticks_by_id[read_int(element.get("ID").raw_payload)]
+        )
+        ordered.elements[:] = (
+            ([current_element] if current_element is not None else []) + queued_tail
+        )
 
     def chassis_layouts(self) -> dict:
         """Scan the WHOLE save (owned mechs, market listings, mission/post-
